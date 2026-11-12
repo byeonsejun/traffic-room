@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { Cctv, Incident } from '@traffic-room/shared';
-import { normalizeCctvs, normalizeEvents } from './normalize';
+import { normalizeCctvs, normalizeEvents } from './normalize.ts';
 
 export type Bbox = { minX: number; maxX: number; minY: number; maxY: number };
 

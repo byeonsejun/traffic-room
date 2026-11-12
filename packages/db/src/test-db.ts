@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import type { Db } from './db';
+import type { Db } from './db.ts';
 
 export const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
 

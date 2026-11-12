@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { createNeonDb } from './db';
+import { createNeonDb } from './db.ts';
 
 const url = process.env.DATABASE_URL;
 if (!url) {

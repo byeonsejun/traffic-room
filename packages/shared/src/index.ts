@@ -1,2 +1,2 @@
-export * from './incident';
-export * from './messages';
+export * from './incident.ts';
+export * from './messages.ts';

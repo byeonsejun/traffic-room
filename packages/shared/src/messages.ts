@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Incident } from './incident';
+import type { Incident } from './incident.ts';
 
 export const DELAY_MINUTES = 60;
 

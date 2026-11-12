@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
-import { categorize, incidentKey, normalizeCctvs, normalizeEvents } from './normalize';
+import { categorize, incidentKey, normalizeCctvs, normalizeEvents } from './normalize.ts';
 
 const fixture = (name: string): unknown =>
   JSON.parse(readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'utf8'));

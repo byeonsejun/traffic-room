@@ -1,2 +1,2 @@
-export * from './client';
-export * from './normalize';
+export * from './client.ts';
+export * from './normalize.ts';

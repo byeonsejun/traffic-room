@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { createItsClient, ItsError } from './client';
+import { createItsClient, ItsError } from './client.ts';
 
 const fakeFetch = (body: unknown, status = 200) =>
   vi.fn(async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;

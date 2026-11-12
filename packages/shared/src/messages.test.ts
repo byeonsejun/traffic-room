@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { parseClientMessage, parseServerMessage } from './messages';
-import type { Incident } from './incident';
+import { parseClientMessage, parseServerMessage } from './messages.ts';
+import type { Incident } from './incident.ts';
 
 const sampleIncident: Incident = {
   key: 'ex-0001',

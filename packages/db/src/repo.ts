@@ -1,5 +1,5 @@
 import type { Cctv, Incident, LogEvent } from '@traffic-room/shared';
-import type { Db, Statement } from './db';
+import type { Db, Statement } from './db.ts';
 
 export type Service = 'events' | 'cctv';
 export type IncidentPlan = {
@@ -70,35 +70,57 @@ export async function applyIncidentPlan(db: Db, plan: IncidentPlan, collectedAt:
   for (const i of plan.quiet) {
     stmts.push({ text: INSERT_INCIDENT, params: insertParams(i, collectedAt, null) });
   }
-  for (const { incident, emitAt } of plan.arriving) {
-    stmts.push({
-      text: `with ins as (
-               insert into incidents
-                 (key, category, road_name, direction, detail, message, lanes_blocked, lon, lat,
-                  started_at, first_seen_at, last_seen_at, arrive_at)
-               values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12)
-               on conflict (key) do nothing
-               returning key)
-             insert into event_log (kind, incident_key, emit_at)
-             select 'arrived', key, $12::timestamptz from ins`,
-      params: insertParams(incident, collectedAt, emitAt),
-    });
-  }
   if (plan.seen.length > 0) {
     stmts.push({
       text: 'update incidents set last_seen_at = $2 where key = any($1::text[])',
       params: [plan.seen, iso(collectedAt)],
     });
   }
-  for (const { key, emitAt } of plan.cleared) {
-    stmts.push({
-      text: `with upd as (
-               update incidents set cleared_at = $2 where key = $1 and cleared_at is null
-               returning key)
-             insert into event_log (kind, incident_key, emit_at)
-             select 'cleared', key, $2::timestamptz from upd`,
-      params: [key, iso(emitAt)],
-    });
+
+  // event_log.id 는 곧 송출 순서다(클라이언트는 id <= lastId 를 버리고, 재전송은 id > lastId 를 돌려준다).
+  // 그래서 도착·해제를 합쳐 emitAt 순으로 넣고(동률은 입력 순서 유지), 각 행의 emit_at 은
+  // 로그에 이미 있는 최대값 아래로 내려가지 않게 끌어올린다. 같은 값을 arrive_at/cleared_at 에도
+  // 써서 스냅샷 노출 시각과 송출 시각이 어긋나지 않게 한다.
+  type Entry =
+    | { kind: 'arrived'; incident: Incident; emitAt: Date }
+    | { kind: 'cleared'; key: string; emitAt: Date };
+  const entries: Entry[] = [
+    ...plan.arriving.map((a) => ({ kind: 'arrived' as const, ...a })),
+    ...plan.cleared.map((c) => ({ kind: 'cleared' as const, ...c })),
+  ].sort((x, y) => x.emitAt.getTime() - y.emitAt.getTime());
+
+  const clamped = (p: string) => `with t as (
+      select greatest(${p}::timestamptz, coalesce((select max(emit_at) from event_log), ${p}::timestamptz)) as e)`;
+  for (const e of entries) {
+    if (e.kind === 'arrived') {
+      const i = e.incident;
+      stmts.push({
+        text: `${clamped('$12')},
+               ins as (
+                 insert into incidents
+                   (key, category, road_name, direction, detail, message, lanes_blocked, lon, lat,
+                    started_at, first_seen_at, last_seen_at, arrive_at)
+                 select $1::text, $2::text, $3::text, $4::text, $5::text, $6::text, $7::text,
+                        $8::float8, $9::float8, $10::timestamptz, $11::timestamptz, $11::timestamptz, t.e
+                 from t
+                 on conflict (key) do nothing
+                 returning key, arrive_at)
+               insert into event_log (kind, incident_key, emit_at)
+               select 'arrived', key, arrive_at from ins`,
+        params: insertParams(i, collectedAt, e.emitAt),
+      });
+    } else {
+      stmts.push({
+        text: `${clamped('$2')},
+               upd as (
+                 update incidents set cleared_at = t.e from t
+                 where key = $1 and cleared_at is null
+                 returning key, cleared_at)
+               insert into event_log (kind, incident_key, emit_at)
+               select 'cleared', key, cleared_at from upd`,
+        params: [e.key, iso(e.emitAt)],
+      });
+    }
   }
 
   await db.batch(stmts);

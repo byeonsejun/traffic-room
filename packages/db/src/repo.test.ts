@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import type { Cctv, Incident } from '@traffic-room/shared';
-import type { Db } from './db';
-import { createTestDb } from './test-db';
+import type { Db } from './db.ts';
+import { createTestDb } from './test-db.ts';
 import {
   applyIncidentPlan, canCall, countRunsThisMonth, getActiveIncidents, getActiveKeys, getCctv,
   getCctvs, getEventsAfter, getEventsBetween, lastCollectedAt, latestEmittedId, recordRun,
   updateCctvUrl, upsertCctvs,
-} from './repo';
+} from './repo.ts';
 
 const t = (hm: string) => new Date(`2026-11-12T${hm}:00Z`);
 const inc = (key: string, over: Partial<Incident> = {}): Incident => ({
@@ -50,6 +50,38 @@ describe('incidents', () => {
     expect(await getEventsBetween(db, t('10:03'), t('10:10'))).toHaveLength(1);
     expect(await latestEmittedId(db, t('10:02'))).toBe(events[0]!.id);
     expect(await latestEmittedId(db, t('09:00'))).toBe(0);
+  });
+
+  test('ids follow emit order even when the plan lists entries out of order', async () => {
+    await applyIncidentPlan(db, { ...none, quiet: [inc('old')] }, t('08:00'));
+    await applyIncidentPlan(db, {
+      ...none,
+      arriving: [{ incident: inc('late'), emitAt: t('10:30') }, { incident: inc('early'), emitAt: t('10:00') }],
+      cleared: [{ key: 'old', emitAt: t('10:15') }],
+    }, t('09:00'));
+    const events = await getEventsAfter(db, 0, t('12:00'), 10);
+    expect(events.map((e) => `${e.kind}:${e.incident.key}`)).toEqual(['arrived:early', 'cleared:old', 'arrived:late']);
+    const ids = events.map((e) => e.id);
+    expect(ids).toEqual([...ids].sort((a, b) => a - b));
+    const times = events.map((e) => e.emitAt);
+    expect(times).toEqual([...times].sort());
+  });
+
+  test('a later run with an earlier emit time is clamped so ids and emit_at stay monotonic', async () => {
+    await applyIncidentPlan(db, { ...none, arriving: [{ incident: inc('a'), emitAt: t('10:30') }] }, t('09:30'));
+    await applyIncidentPlan(db, {
+      ...none,
+      arriving: [{ incident: inc('b'), emitAt: t('10:10') }],
+      cleared: [{ key: 'a', emitAt: t('10:20') }],
+    }, t('09:40'));
+    const events = await getEventsAfter(db, 0, t('12:00'), 10);
+    expect(events.map((e) => e.incident.key + e.kind)).toEqual(['aarrived', 'barrived', 'acleared']);
+    expect(events.map((e) => e.emitAt)).toEqual(Array(3).fill(t('10:30').toISOString()));
+    const ids = events.map((e) => e.id);
+    expect(ids).toEqual([...ids].sort((a, b) => a - b));
+    // 스냅샷 노출 시각도 보정된 값과 같다: a·b 모두 10:30 전에는 보이지 않고, 10:30 이후에는 a 가 사라지고 b 만 남는다.
+    expect((await getActiveIncidents(db, t('10:20'))).map((i) => i.key)).toEqual([]);
+    expect((await getActiveIncidents(db, t('10:31'))).map((i) => i.key)).toEqual(['b']);
   });
 
   test('cleared incident leaves the snapshot after its emit time', async () => {
