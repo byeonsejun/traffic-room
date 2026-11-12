@@ -23,8 +23,12 @@ const BASE = 'https://openapi.its.go.kr:9443';
 const KOREA: Bbox = { minX: 124, maxX: 132, minY: 33, maxY: 39 };
 const TIMEOUT_MS = 20_000;
 
-const fixture = (name: string): unknown =>
-  JSON.parse(readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'utf8'));
+// 번들러(Turbopack)가 템플릿 경로를 잘못 묶는 일이 있어 파일마다 리터럴 URL 로 읽는다.
+const readFixture = (url: URL): unknown => JSON.parse(readFileSync(url, 'utf8'));
+const fixture = (name: 'events.json' | 'cctv-ex.json'): unknown =>
+  name === 'events.json'
+    ? readFixture(new URL('../fixtures/events.json', import.meta.url))
+    : readFixture(new URL('../fixtures/cctv-ex.json', import.meta.url));
 
 export function createItsClient(opts: { mode: 'fixture' | 'live'; apiKey?: string; fetchImpl?: typeof fetch }): ItsClient {
   const doFetch = opts.fetchImpl ?? fetch;

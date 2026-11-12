@@ -14,6 +14,32 @@ html, body { margin: 0; height: 100%; }
 body {
   background: var(--asphalt);
   color: var(--ink);
-  font-family: "IBM Plex Sans KR", system-ui, sans-serif;
+  font-family: var(--font-plex), "IBM Plex Sans KR", system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
+}
+
+.map-view { width: 100%; height: 100%; background: var(--asphalt); }
+.map-view .maplibregl-canvas:focus-visible { outline: 2px solid var(--info); outline-offset: -2px; }
+
+.pulse-marker { width: 0; height: 0; pointer-events: none; }
+.pulse-marker span {
+  position: absolute;
+  left: -23px;
+  top: -23px;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 2px solid var(--pulse);
+  background: color-mix(in srgb, var(--pulse) 22%, transparent);
+  box-shadow: 0 0 18px var(--pulse);
+  transform: scale(0);
+  opacity: 0.9;
+  animation: pulse-ring 1.4s ease-out 3 forwards;
+}
+@keyframes pulse-ring {
+  from { transform: scale(0); opacity: 0.9; }
+  to { transform: scale(1); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-marker span { animation: none; display: none; }
 }
