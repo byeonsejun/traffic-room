@@ -1,4 +1,5 @@
-# 실시간 서버 하나만 올린다. 수집은 GitHub Actions, 화면은 Vercel 이 맡는다.
+# 실시간 서버 하나만 올린다. 수집은 국내 회선의 Mac(launchd), 화면은 Vercel 이 맡는다.
+# 이 서버는 DB 만 읽는다. ITS 가 클라우드 IP 를 막아서 ITS 키도 필요 없다.
 services:
   - type: web
     name: traffic-room-realtime
@@ -14,9 +15,10 @@ services:
         value: "24"
       - key: ITS_MODE
         value: live
+      # ITS 를 부르지 않으므로 CCTV 주소 새로고침은 끈다. 저장된 주소만 돌려준다.
+      - key: CCTV_REFRESH
+        value: "off"
       - key: DATABASE_URL
-        sync: false
-      - key: ITS_API_KEY
         sync: false
       - key: ALLOWED_ORIGINS
         sync: false

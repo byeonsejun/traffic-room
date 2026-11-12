@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { readConfig } from './config.ts';
 
 const DB = 'postgres://user:hunter2@db.example/neondb';
@@ -8,7 +8,7 @@ test('reads port, mode and trimmed origins', () => {
   expect(r).toEqual({
     ok: true,
     warnings: [],
-    config: { databaseUrl: DB, port: 9000, mode: 'live', allowedOrigins: ['https://a.example', 'https://b.example'] },
+    config: { databaseUrl: DB, port: 9000, mode: 'live', allowedOrigins: ['https://a.example', 'https://b.example'], cctvRefresh: true },
   });
 });
 
@@ -31,4 +31,23 @@ test('empty ALLOWED_ORIGINS stops the server in live mode', () => {
   expect(r.ok).toBe(false);
   expect(JSON.stringify(r)).toContain('ALLOWED_ORIGINS');
   expect(JSON.stringify(r)).not.toContain('hunter2');
+});
+
+describe('CCTV_REFRESH', () => {
+  const base = { DATABASE_URL: DB, ALLOWED_ORIGINS: 'https://a.example' };
+  const get = (env: Record<string, string>) => {
+    const r = readConfig({ ...base, ...env });
+    if (!r.ok) throw new Error('not ok');
+    return r.config.cctvRefresh;
+  };
+
+  test('defaults to off when ITS_MODE is not live, on when live', () => {
+    expect(get({})).toBe(false);
+    expect(get({ ITS_MODE: 'live' })).toBe(true);
+  });
+
+  test('explicit off wins in live mode, explicit on works', () => {
+    expect(get({ ITS_MODE: 'live', CCTV_REFRESH: 'off' })).toBe(false);
+    expect(get({ CCTV_REFRESH: 'on' })).toBe(true);
+  });
 });

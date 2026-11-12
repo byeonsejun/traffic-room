@@ -14,6 +14,8 @@ export interface ServerDeps {
   /** 스케줄러가 broadcast 할 허브. 없으면 내부에서 만든다. */
   hub?: Hub;
   quota?: DailyQuota;
+  /** false 면 refresh 요청에도 ITS 를 부르지 않고 저장된 주소만 돌려준다. 기본은 true. */
+  cctvRefresh?: boolean;
   /**
    * 이 시간 동안 아무 메시지도 없으면 끊는다. 클라이언트 ping 은 25초 주기지만 백그라운드 탭에서는
    * 브라우저가 타이머를 1분 단위로 늦출 수 있어 넉넉히 둔다.
@@ -45,6 +47,7 @@ function errorCode(e: unknown): string {
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   const { db, its, now } = deps;
   const hub = deps.hub ?? createHub();
+  const cctvRefresh = deps.cctvRefresh ?? true;
   const quota = deps.quota ?? createDailyQuota(DAILY_REFRESH_LIMIT);
   const idleMs = deps.idleMs ?? 120_000;
   const allowed = new Set(deps.allowedOrigins);
@@ -105,7 +108,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   });
 
   async function cctvUrl(cctvId: string, refresh: boolean): Promise<CctvUrlResult> {
-    if (refresh) return refreshCctv({ db, its, now, quota }, cctvId);
+    if (refresh && cctvRefresh) return refreshCctv({ db, its, now, quota }, cctvId);
     const c = await getCctv(db, cctvId);
     return c ? { url: c.url, reason: 'cached' } : { url: null, reason: 'unavailable' };
   }

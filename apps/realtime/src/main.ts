@@ -12,14 +12,14 @@ if (!read.ok) {
   process.exit(1);
 }
 for (const w of read.warnings) console.warn(`[config] ${w}`);
-const { databaseUrl, port, mode, allowedOrigins } = read.config;
+const { databaseUrl, port, mode, allowedOrigins, cctvRefresh } = read.config;
 
 const db = createNeonDb(databaseUrl);
 const its = createItsClient({ mode, apiKey: process.env.ITS_API_KEY });
 const now = () => new Date();
 const hub = createHub();
 
-const app = await buildServer({ db, its, now, allowedOrigins, hub, logger: true });
+const app = await buildServer({ db, its, now, allowedOrigins, hub, cctvRefresh, logger: true });
 const scheduler = createScheduler({
   loadWindow: (from, to) => getEventsBetween(db, from, to),
   emit: (e) => hub.broadcast(e),
@@ -29,7 +29,7 @@ const scheduler = createScheduler({
 });
 
 await app.listen({ port, host: '0.0.0.0' });
-app.log.info(`its mode=${mode}, allowed origins=${allowedOrigins.length}`);
+app.log.info(`its mode=${mode}, allowed origins=${allowedOrigins.length}, cctv refresh=${cctvRefresh ? 'on' : 'off'}`);
 await scheduler.start();
 
 const shutdown = async () => {

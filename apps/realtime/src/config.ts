@@ -3,6 +3,8 @@ export interface RealtimeConfig {
   port: number;
   mode: 'live' | 'fixture';
   allowedOrigins: string[];
+  /** 만료된 CCTV 주소를 ITS 에서 새로 받을지. 끄면 ITS 를 부르지 않아 키도 필요 없다. */
+  cctvRefresh: boolean;
 }
 
 export type ConfigResult =
@@ -17,6 +19,8 @@ export function readConfig(env: Record<string, string | undefined>): ConfigResul
   const databaseUrl = env.DATABASE_URL;
   if (!databaseUrl) return { ok: false, error: 'DATABASE_URL 환경변수가 필요합니다.' };
   const mode = env.ITS_MODE === 'live' ? 'live' : 'fixture';
+  // ITS 는 클라우드 IP 를 막으므로 배포 서버는 CCTV_REFRESH=off 로 둔다. 값이 없으면 live 일 때만 켠다.
+  const cctvRefresh = env.CCTV_REFRESH === 'on' ? true : env.CCTV_REFRESH === 'off' ? false : mode === 'live';
   const allowedOrigins = (env.ALLOWED_ORIGINS ?? '')
     .split(',')
     .map((s) => s.trim())
@@ -28,5 +32,5 @@ export function readConfig(env: Record<string, string | undefined>): ConfigResul
     if (mode === 'live') return { ok: false, error: NO_ORIGINS };
     warnings.push(NO_ORIGINS);
   }
-  return { ok: true, warnings, config: { databaseUrl, port: Number(env.PORT ?? 8787), mode, allowedOrigins } };
+  return { ok: true, warnings, config: { databaseUrl, port: Number(env.PORT ?? 8787), mode, allowedOrigins, cctvRefresh } };
 }

@@ -31,11 +31,11 @@ afterEach(async () => {
   apps = [];
 });
 
-async function setup(opts: { its?: ItsClient; db?: Db; idleMs?: number } = {}) {
+async function setup(opts: { its?: ItsClient; db?: Db; idleMs?: number; cctvRefresh?: boolean } = {}) {
   const db = opts.db ?? (await createTestDb());
   const its = opts.its ?? fakeIts();
   const hub = createHub();
-  const app = await buildServer({ db, its, now: () => NOW, allowedOrigins: [ORIGIN], hub, idleMs: opts.idleMs });
+  const app = await buildServer({ db, its, now: () => NOW, allowedOrigins: [ORIGIN], hub, idleMs: opts.idleMs, cctvRefresh: opts.cctvRefresh });
   await app.ready();
   apps.push(app);
   return { app, db, its, hub };
@@ -221,6 +221,27 @@ describe('websocket', () => {
     await c.next();
     c.send({ type: 'cctv.request', cctvId: 'nope', refresh: true });
     expect(await c.next()).toMatchObject({ type: 'cctv.url', payload: { cctvId: 'nope', url: null, reason: 'unavailable' } });
+  });
+
+  test('cctv.request refresh=true with CCTV_REFRESH off never calls ITS and answers the cached url', async () => {
+    const { app, db, its } = await setup({ cctvRefresh: false });
+    await upsertCctvs(db, [SEOCHO]);
+    const c = await connect(app);
+    await c.next();
+    c.send({ type: 'cctv.request', cctvId: 'c1', refresh: true });
+    expect(await c.next()).toMatchObject({
+      type: 'cctv.url', payload: { cctvId: 'c1', url: SEOCHO.url, reason: 'cached' },
+    });
+    expect(its.cctvs).not.toHaveBeenCalled();
+  });
+
+  test('cctv.request refresh=true with CCTV_REFRESH off for an unknown cctv is unavailable', async () => {
+    const { app, its } = await setup({ cctvRefresh: false });
+    const c = await connect(app);
+    await c.next();
+    c.send({ type: 'cctv.request', cctvId: 'nope', refresh: true });
+    expect(await c.next()).toMatchObject({ type: 'cctv.url', payload: { cctvId: 'nope', url: null, reason: 'unavailable' } });
+    expect(its.cctvs).not.toHaveBeenCalled();
   });
 
   test('cctv.request refresh=true calls ITS once with a ±0.01 bbox and updates the url', async () => {
