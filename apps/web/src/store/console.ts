@@ -30,7 +30,7 @@ interface ConsoleState {
   retryInMs?: number;
   selectedKey: string | null;
   cctvId: string | null;
-  cctvUrlOverride: Record<string, string>;
+  cctvUrlOverride: Record<string, string | null>;
   applySnapshot(s: Snapshot): void;
   applyServerMessage(m: ServerMessage, now: Date): void;
   setStatus(s: ConnStatus, retryInMs?: number): void;
@@ -83,7 +83,6 @@ export const useConsole = create<ConsoleState>()((set) => ({
         }
         case 'cctv.url': {
           const { cctvId, url } = m.payload;
-          if (!url) return st;
           return { cctvUrlOverride: { ...st.cctvUrlOverride, [cctvId]: url } };
         }
         default:

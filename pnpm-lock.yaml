@@ -221,6 +221,9 @@ importers:
       '@traffic-room/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      hls.js:
+        specifier: ^1.7.4
+        version: 1.7.4
       maplibre-gl:
         specifier: ^6.18.0
         version: 6.18.0
@@ -1187,6 +1190,9 @@ packages:
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
+
+  hls.js@1.7.4:
+    resolution: {integrity: sha512-3GlxGdPvT2YHvQYOt+yOzT/DEior/qJVNIylHA77kgeoBTdQQqi70GwefNEUmHQeNGyjC8U62+bruqW/Tpm+tg==}
 
   html-encoding-sniffer@6.0.0:
     resolution: {integrity: sha512-CV9TW3Y3f8/wT0BRFc1/KAVQ3TUHiXmaAb6VW9vtiMFf7SLoMd1PdAc4W3KFOFETBJUb90KatHqlsZMWV+R9Gg==}
@@ -2543,6 +2549,8 @@ snapshots:
 
   has-flag@4.0.0:
     optional: true
+
+  hls.js@1.7.4: {}
 
   html-encoding-sniffer@6.0.0:
     dependencies:

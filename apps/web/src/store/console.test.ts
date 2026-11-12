@@ -86,7 +86,7 @@ test('cctv.url updates the override map', () => {
   applyServerMessage(msg('https://x/a.m3u8', 'refreshed'), NOW);
   expect(useConsole.getState().cctvUrlOverride).toEqual({ c1: 'https://x/a.m3u8' });
   applyServerMessage(msg(null, 'unavailable'), NOW);
-  expect(useConsole.getState().cctvUrlOverride).toEqual({ c1: 'https://x/a.m3u8' });
+  expect(useConsole.getState().cctvUrlOverride).toEqual({ c1: null });
 });
 
 test('hello and pong never touch lastId', () => {

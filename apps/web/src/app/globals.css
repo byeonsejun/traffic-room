@@ -43,3 +43,34 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .pulse-marker span { animation: none; display: none; }
 }
+
+/* CCTV panel */
+.cctv-panel { display: flex; flex-direction: column; background: var(--panel); }
+.cctv-panel .cam { position: relative; aspect-ratio: 3 / 2; background: #060a10; flex: none; }
+.cctv-panel .cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cctv-panel .live {
+  position: absolute; right: 12px; top: 10px; font-size: 12px;
+  background: var(--jam); color: #fff; border-radius: 4px; padding: 2px 8px;
+}
+.cctv-panel .err {
+  position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+  padding: 24px; font-size: 13px; color: var(--mute); background: #060a10;
+}
+.cctv-panel .cam-full {
+  position: absolute; left: 12px; bottom: 10px; font: inherit; font-size: 12px;
+  color: var(--ink); background: rgb(12 19 29 / 0.78); border: 1px solid var(--line);
+  border-radius: 4px; padding: 4px 10px; cursor: pointer;
+}
+.cctv-panel .camname { font-size: 14px; padding: 12px 14px 0; }
+.cctv-panel .chips { display: flex; gap: 6px; padding: 10px 14px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.cctv-panel .chip {
+  font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 14px; border: 0;
+  background: #162232; color: var(--mute); cursor: pointer;
+}
+.cctv-panel .chip[aria-pressed='true'] { background: #1f3550; color: #fff; }
+.cctv-panel button:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.cctv-panel.is-overlay { position: fixed; inset: 0; z-index: 1000; background: var(--asphalt); justify-content: center; }
+.cctv-panel.is-overlay .cam { aspect-ratio: auto; flex: 1; }
+.cctv-panel:fullscreen { background: var(--asphalt); justify-content: center; }
+.cctv-panel:fullscreen .cam { aspect-ratio: auto; flex: 1; }
+.cctv-panel:fullscreen .cam video, .cctv-panel.is-overlay .cam video { object-fit: contain; }
