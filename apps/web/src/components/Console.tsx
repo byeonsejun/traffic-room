@@ -115,7 +115,7 @@ export function Console() {
 
   return (
     <div className="console">
-      <TopBar status={status} retryInMs={retryInMs} live={!!REALTIME_URL} beat={arrivalId} />
+      <TopBar status={status} retryInMs={retryInMs} live={!!REALTIME_URL} beat={arrivalId} collectedAt={collectedAt} />
       <aside className="left" aria-label="돌발상황 지표">
         <StatsPanel arrivalId={arrivalId} collectedAt={collectedAt} />
       </aside>
