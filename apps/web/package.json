@@ -8,7 +8,8 @@
     "build": "node scripts/copy-maplibre-worker.mjs && next build",
     "start": "next start",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "oxlint -c ../../.oxlintrc.json --deny-warnings src scripts"
   },
   "dependencies": {
     "@traffic-room/db": "workspace:*",

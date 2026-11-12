@@ -30,8 +30,11 @@ export function CctvPanel({ cctvs, send }: { cctvs: Cctv[]; send: (m: ClientMess
 
   const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // 영상 effect 가 send 바뀜으로 다시 돌지 않게 ref 로 들고 있다. 렌더 뒤에 갱신한다.
   const sendRef = useRef(send);
-  sendRef.current = send;
+  useEffect(() => {
+    sendRef.current = send;
+  }, [send]);
   const asked = useRef(new Set<string>());
   const pending = useRef<{ key: string; ov: unknown } | null>(null);
   const [failedKey, setFailedKey] = useState<string | null>(null);

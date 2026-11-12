@@ -9,7 +9,8 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "migrate": "node src/migrate.ts"
+    "migrate": "node src/migrate.ts",
+    "lint": "oxlint -c ../../.oxlintrc.json --deny-warnings src"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.16",

@@ -113,7 +113,7 @@ describe('incidents', () => {
     const bad = inc('b', { category: null as never });
     await expect(applyIncidentPlan(db, {
       ...none, quiet: [inc('a')], arriving: [{ incident: bad, emitAt: t('10:00') }],
-    }, t('09:00'))).rejects.toThrow();
+    }, t('09:00'))).rejects.toThrow(/category/);
     expect(await getActiveKeys(db)).toEqual([]);
   });
 });

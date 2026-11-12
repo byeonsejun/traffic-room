@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Category } from '@traffic-room/shared';
 import { CATEGORY_LABEL, categoryColor } from '@/lib/tokens';
 import { hhmm } from '@/lib/time';
@@ -21,17 +21,21 @@ export function StatsPanel({ arrivalId, collectedAt }: { arrivalId?: number; col
   const max = Math.max(1, ...rows.map((r) => r.n));
 
   // 새 상황이 도착하면 숫자가 잠깐 붉어진다.
-  // 타이머는 새 도착이나 언마운트 때만 지운다. 도착 직후 해제가 feed[0] 이 되어 arrivalId 가
+  // 강조는 새 도착 id 로 켜고 타이머로만 끈다. 도착 직후 해제가 feed[0] 이 되어 arrivalId 가
   // undefined 로 바뀌어도 1.2초 뒤에는 반드시 원래 색으로 돌아온다.
-  const [bump, setBump] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // 바뀐 prop 을 렌더 중에 반영하는 React 권장 방식이라 effect 안에서 setState 하지 않는다.
+  const [seen, setSeen] = useState<number | undefined>(undefined);
+  const [bumpFor, setBumpFor] = useState<number | null>(null);
+  if (arrivalId !== seen) {
+    setSeen(arrivalId);
+    if (arrivalId !== undefined) setBumpFor(arrivalId);
+  }
   useEffect(() => {
-    if (arrivalId === undefined) return;
-    setBump(true);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => setBump(false), BUMP_MS);
-  }, [arrivalId]);
-  useEffect(() => () => clearTimeout(timer.current), []);
+    if (bumpFor === null) return;
+    const t = setTimeout(() => setBumpFor(null), BUMP_MS);
+    return () => clearTimeout(t);
+  }, [bumpFor]);
+  const bump = bumpFor !== null;
 
   return (
     <>

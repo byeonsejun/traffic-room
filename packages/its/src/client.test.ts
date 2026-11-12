@@ -8,10 +8,9 @@ describe('live client', () => {
   test('throws ItsError without leaking the key on 4001', async () => {
     const c = createItsClient({ mode: 'live', apiKey: 'SECRETKEY', fetchImpl: fakeFetch({ header: { resultCode: 4001, resultMsg: '사용량 제한' } }) });
     await expect(c.events()).rejects.toMatchObject({ code: '4001' });
-    await c.events().catch((e) => {
-      expect(e).toBeInstanceOf(ItsError);
-      expect(String(e.message) + String(e.stack)).not.toContain('SECRETKEY');
-    });
+    const e: unknown = await c.events().catch((err: unknown) => err);
+    expect(e).toBeInstanceOf(ItsError);
+    expect(String((e as Error).message) + String((e as Error).stack)).not.toContain('SECRETKEY');
   });
 
   test('http errors and network failures do not leak the key', async () => {

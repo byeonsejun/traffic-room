@@ -13,15 +13,15 @@ type Props = {
 };
 
 function useCountdown(ms: number | undefined) {
-  const [left, setLeft] = useState(ms);
+  // 남은 시간은 타이머 콜백에서만 바꾼다. 새 ms 가 들어오면 첫 틱 전까지는 ms 그대로 보여 준다.
+  const [tick, setTick] = useState<{ for: number; left: number } | null>(null);
   useEffect(() => {
-    setLeft(ms);
     if (ms === undefined) return;
     const until = Date.now() + ms;
-    const t = setInterval(() => setLeft(Math.max(0, until - Date.now())), 250);
+    const t = setInterval(() => setTick({ for: ms, left: Math.max(0, until - Date.now()) }), 250);
     return () => clearInterval(t);
   }, [ms]);
-  return left;
+  return tick && tick.for === ms ? tick.left : ms;
 }
 
 export function ConnectionBadge({ status, retryInMs, live = true, beat }: Props) {
@@ -29,6 +29,8 @@ export function ConnectionBadge({ status, retryInMs, live = true, beat }: Props)
 
   let tone: 'ok' | 'wait' | 'idle' = 'idle';
   let text = '연결하는 중';
+  /** 매초 바뀌는 앞부분. live 영역 밖에 두어 상태가 바뀔 때만 읽어 주게 한다. */
+  let lead: string | null = null;
   if (!live) {
     text = '수집본으로 보는 중';
   } else if (status === 'open') {
@@ -39,13 +41,17 @@ export function ConnectionBadge({ status, retryInMs, live = true, beat }: Props)
     text = '서버를 깨우는 중이에요. 최대 1분 걸려요';
   } else if (status === 'retrying') {
     tone = 'wait';
-    text = `${Math.max(1, Math.ceil((left ?? 0) / 1000))}초 뒤 다시 연결해요`;
+    lead = `${Math.max(1, Math.ceil((left ?? 0) / 1000))}초 뒤 `;
+    text = '다시 연결해요';
   }
 
   return (
     <div className={`conn is-${tone}`}>
       <span key={beat} className={`dot${beat ? ' is-beat' : ''}`} aria-hidden="true" />
-      <span role="status" aria-live="polite">{text}</span>
+      <span>
+        {lead}
+        <span role="status" aria-live="polite">{text}</span>
+      </span>
     </div>
   );
 }

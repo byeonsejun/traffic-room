@@ -1,5 +1,5 @@
-import { afterEach, expect, test } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, expect, test, vi } from 'vitest';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { ConnectionBadge } from './ConnectionBadge';
 
 afterEach(cleanup);
@@ -13,9 +13,20 @@ test.each([
   expect(screen.getByRole('status').textContent).toBe(text);
 });
 
-test('retrying shows seconds until the next attempt', () => {
-  render(<ConnectionBadge status="retrying" retryInMs={4000} />);
-  expect(screen.getByRole('status').textContent).toBe('4초 뒤 다시 연결해요');
+test('retrying shows seconds until the next attempt, but only the state is announced', () => {
+  vi.useFakeTimers();
+  try {
+    const { container } = render(<ConnectionBadge status="retrying" retryInMs={4000} />);
+    const badge = container.querySelector('.conn')!;
+    expect(badge.textContent).toBe('4초 뒤 다시 연결해요');
+    // 매초 바뀌는 숫자는 live 영역 밖에 둔다. 상태가 바뀔 때만 읽어 준다.
+    expect(screen.getByRole('status').textContent).toBe('다시 연결해요');
+    act(() => vi.advanceTimersByTime(2000));
+    expect(badge.textContent).toBe('2초 뒤 다시 연결해요');
+    expect(screen.getByRole('status').textContent).toBe('다시 연결해요');
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test('without a realtime server it says the screen shows the latest collection', () => {
