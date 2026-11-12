@@ -4,7 +4,10 @@ import { createItsClient } from '@traffic-room/its';
 import { DELAY_MINUTES } from '@traffic-room/shared';
 import type { Snapshot } from '@/store/console';
 
-export const revalidate = 60;
+export const dynamic = 'force-dynamic';
+
+const OK_HEADERS = { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=30' };
+const NO_STORE = { 'Cache-Control': 'no-store' };
 
 const FAIL = { message: '상황 정보를 불러오지 못했어요. 잠시 뒤 새로고침해 주세요.' };
 
@@ -14,10 +17,10 @@ export async function GET() {
     if (!url) {
       // 개발 전용 재생: 키도 DB도 없을 때만 픽스처로 채운다.
       const mode = process.env.ITS_MODE;
-      if (mode && mode !== 'fixture') throw new Error('no database');
+      if (process.env.NODE_ENV === 'production' || (mode && mode !== 'fixture')) throw new Error('no database');
       const incidents = await createItsClient({ mode: 'fixture' }).events();
       const body: Snapshot = { incidents, latestId: 0, collectedAt: null, delayMinutes: DELAY_MINUTES };
-      return NextResponse.json(body);
+      return NextResponse.json(body, { headers: OK_HEADERS });
     }
     const db = createNeonDb(url);
     const now = new Date();
@@ -29,8 +32,8 @@ export async function GET() {
     const body: Snapshot = {
       incidents, latestId, collectedAt: collected ? collected.toISOString() : null, delayMinutes: DELAY_MINUTES,
     };
-    return NextResponse.json(body);
+    return NextResponse.json(body, { headers: OK_HEADERS });
   } catch {
-    return NextResponse.json(FAIL, { status: 503 });
+    return NextResponse.json(FAIL, { status: 503, headers: NO_STORE });
   }
 }

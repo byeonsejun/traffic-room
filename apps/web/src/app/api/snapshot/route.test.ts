@@ -97,3 +97,29 @@ describe('fixture replay without DATABASE_URL', () => {
     expect((await getSnapshot()).status).toBe(503);
   });
 });
+
+describe('production without DATABASE_URL', () => {
+  beforeEach(() => {
+    vi.stubEnv('DATABASE_URL', '');
+    vi.stubEnv('ITS_MODE', '');
+    vi.stubEnv('NODE_ENV', 'production');
+  });
+
+  test('snapshot and cctvs are 503 no-store instead of the fixture', async () => {
+    for (const get of [getSnapshot, getCctvs]) {
+      const res = await get();
+      expect(res.status).toBe(503);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect((await res.json()).message).toBe('상황 정보를 불러오지 못했어요. 잠시 뒤 새로고침해 주세요.');
+    }
+  });
+});
+
+describe('cache headers', () => {
+  test('success responses carry s-maxage', async () => {
+    vi.stubEnv('DATABASE_URL', '');
+    vi.stubEnv('ITS_MODE', '');
+    expect((await getSnapshot()).headers.get('cache-control')).toBe('public, s-maxage=60, stale-while-revalidate=30');
+    expect((await getCctvs()).headers.get('cache-control')).toBe('public, s-maxage=3600, stale-while-revalidate=600');
+  });
+});

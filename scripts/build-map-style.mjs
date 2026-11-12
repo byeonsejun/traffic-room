@@ -21,6 +21,9 @@ const set = (l, group, prop, value) => {
   l[group][prop] = value;
 };
 
+// 질감 래스터(ne2_shaded)와 패턴은 팔레트를 깨뜨리므로 쓰지 않는다.
+style.layers = style.layers.filter((l) => l.type !== 'raster');
+for (const [id, src] of Object.entries(style.sources)) if (src.type === 'raster') delete style.sources[id];
 style.layers = style.layers.filter((l) => !DROP.test(l.id) && !DROP.test(l['source-layer'] ?? ''));
 
 for (const l of style.layers) {
@@ -29,6 +32,7 @@ for (const l of style.layers) {
   else if (l.type === 'fill') {
     set(l, 'paint', 'fill-color', sl === 'water' ? C.water : C.land);
     delete l.paint['fill-opacity'];
+    delete l.paint['fill-pattern'];
   } else if (l.type === 'line') {
     if (sl === 'water' || sl === 'waterway') set(l, 'paint', 'line-color', C.water);
     else if (sl === 'boundary') set(l, 'paint', 'line-color', C.line);
