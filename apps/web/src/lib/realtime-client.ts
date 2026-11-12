@@ -66,14 +66,21 @@ export function createRealtimeClient(opts: RealtimeClientOptions) {
     socket.onopen = () => {
       if (ws !== socket) return;
       clearTimeout(wakingTimer);
-      attempt = 0;
       opts.onStatus('open');
       send({ type: 'resume', lastId: opts.getLastId() });
       pingTimer = setInterval(() => {
         send({ type: 'ping' });
         clearTimeout(pongTimer);
         pongTimer = setTimeout(() => {
-          if (ws === socket) socket.close();
+          if (ws !== socket) return;
+          // 반쯤 끊긴 연결은 onclose가 한참 늦을 수 있어 기다리지 않고 바로 재연결한다.
+          ws = null;
+          try {
+            socket.close();
+          } catch {
+            // 이미 닫힌 소켓이면 무시한다.
+          }
+          scheduleRetry();
         }, PONG_WITHIN_MS);
       }, PING_EVERY_MS);
     };
@@ -81,6 +88,7 @@ export function createRealtimeClient(opts: RealtimeClientOptions) {
       if (ws !== socket) return;
       const m = parseServerMessage(String(e.data));
       if (!m) return;
+      attempt = 0; // 서버가 말을 걸어온 연결만 건강한 것으로 보고 백오프를 되돌린다.
       if (m.type === 'pong') {
         clearTimeout(pongTimer);
         pongTimer = undefined;

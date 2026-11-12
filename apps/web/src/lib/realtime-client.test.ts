@@ -4,6 +4,7 @@ import { createRealtimeClient, type ConnStatus } from './realtime-client.ts';
 class FakeWS {
   static instances: FakeWS[] = [];
   readyState = 0;
+  silentClose = false;
   sent: string[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
@@ -17,7 +18,7 @@ class FakeWS {
   }
   close() {
     this.readyState = 3;
-    this.onclose?.();
+    if (!this.silentClose) this.onclose?.();
   }
   open() {
     this.readyState = 1;
@@ -84,13 +85,42 @@ test('reconnects with capped exponential backoff', () => {
   expect(delays).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]);
 });
 
-test('resets backoff after a successful open', () => {
+test('keeps growing the backoff when the server opens then closes silently', () => {
+  const { statuses } = setup();
+  const delays: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    last().open();
+    last().close();
+    delays.push(statuses.at(-1)![1]!);
+    vi.advanceTimersByTime(statuses.at(-1)![1]!);
+  }
+  expect(delays).toEqual([1000, 2000, 4000, 8000]);
+});
+
+test('resets backoff once a server message arrives', () => {
   const { statuses } = setup();
   last().close();
   vi.advanceTimersByTime(1000);
+  last().close();
+  vi.advanceTimersByTime(2000);
   last().open();
+  last().recv(JSON.stringify({ id: 0, type: 'hello', ts: new Date().toISOString(), payload: { delayMinutes: 60, latestId: 1 } }));
   last().close();
   expect(statuses.at(-1)).toEqual(['retrying', 1000]);
+});
+
+test('pong timeout retries without waiting for onclose', () => {
+  const { statuses } = setup();
+  const ws = last();
+  ws.silentClose = true;
+  ws.open();
+  vi.advanceTimersByTime(35000);
+  expect(statuses.at(-1)).toEqual(['retrying', 1000]);
+  vi.advanceTimersByTime(1000);
+  expect(FakeWS.instances).toHaveLength(2);
+  ws.onclose?.(); // 늦게 도착한 stale close는 무시된다
+  expect(FakeWS.instances).toHaveLength(2);
+  expect(statuses.at(-1)![0]).toBe('connecting');
 });
 
 test('pings every 25s and reconnects if no pong within 10s', () => {
