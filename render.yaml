@@ -1,0 +1,22 @@
+# 실시간 서버 하나만 올린다. 수집은 GitHub Actions, 화면은 Vercel 이 맡는다.
+services:
+  - type: web
+    name: traffic-room-realtime
+    runtime: node
+    plan: free
+    region: singapore
+    # rootDir 없이 저장소 루트에서 빌드한다. 실시간 서버와 그 의존 패키지만 설치한다.
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --filter @traffic-room/realtime...
+    startCommand: pnpm --filter @traffic-room/realtime start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: ITS_MODE
+        value: live
+      - key: DATABASE_URL
+        sync: false
+      - key: ITS_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
