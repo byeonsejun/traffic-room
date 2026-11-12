@@ -18,7 +18,9 @@ function Card({ item, selected, onPick }: { item: FeedItem; selected: boolean; o
   const { incident: i, kind, fresh } = item;
   const cleared = kind === 'cleared';
   const when = cleared ? item.at : i.startedAt ?? item.at;
-  const cls = `ev${cleared ? ' is-cleared' : ''}${fresh ? ' is-new' : ''}`;
+  // 공사는 오래 이어지는 상황이라 새로 들어와도 등장 연출을 하지 않는다.
+  const loud = fresh && i.category !== 'construction';
+  const cls = `ev${cleared ? ' is-cleared' : ''}${loud ? ' is-new' : ''}`;
   const body = (
     <>
       <span className="k" style={{ background: categoryColor(i.category) }} aria-hidden="true" />

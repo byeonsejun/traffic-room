@@ -32,6 +32,14 @@ export function needsResync(lastId: number, latestId: number): boolean {
 }
 const FRESH_WITHIN_MS = 120_000;
 
+/**
+ * 새 도착 연출(파동 · 지도 이동 · 숫자 강조)을 할 항목인지. 늦게 받은 것(fresh 아님)과,
+ * 오래 이어지는 공사는 조용히 들어온다.
+ */
+export function isLoudArrival(item: FeedItem | undefined): boolean {
+  return !!item && item.kind === 'arrived' && item.fresh && item.incident.category !== 'construction';
+}
+
 interface ConsoleState {
   incidents: Record<string, Incident>;
   feed: FeedItem[];

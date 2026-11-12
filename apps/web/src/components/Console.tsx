@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Cctv, ClientMessage } from '@traffic-room/shared';
 import { createRealtimeClient } from '@/lib/realtime-client';
-import { needsResync, useConsole, type Snapshot } from '@/store/console';
+import { isLoudArrival, needsResync, useConsole, type Snapshot } from '@/store/console';
 import { CctvPanel } from './CctvPanel';
 import { Feed } from './Feed';
 import { MapView } from './MapView';
@@ -111,7 +111,7 @@ export function Console() {
     };
   }, []);
 
-  const arrivalId = top && top.kind === 'arrived' && top.fresh ? top.id : undefined;
+  const arrivalId = top && isLoudArrival(top) ? top.id : undefined;
 
   return (
     <div className="console">

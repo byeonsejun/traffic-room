@@ -5,7 +5,7 @@ import type { GeoJSONSource, Map as MlMap, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Incident } from '@traffic-room/shared';
 import { categoryColor } from '@/lib/tokens';
-import { useConsole } from '@/store/console';
+import { isLoudArrival, useConsole } from '@/store/console';
 
 const KOREA_BOUNDS: [number, number, number, number] = [124.5, 33.0, 131.0, 38.7];
 const SOURCE = 'incidents';
@@ -28,14 +28,19 @@ export function MapView() {
   const incidents = useConsole((s) => s.incidents);
   const feed = useConsole((s) => s.feed);
   const select = useConsole((s) => s.select);
+  const selectedKey = useConsole((s) => s.selectedKey);
+  const selected = useConsole((s) => (s.selectedKey ? s.incidents[s.selectedKey] : undefined));
 
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const mlRef = useRef<typeof import('maplibre-gl') | null>(null);
   const markers = useRef(new Set<Marker>());
   const pulsed = useRef(new Set<number>());
+  // 지도 load 때 넣을 최신 목록. 렌더 중이 아니라 커밋 뒤에 갱신한다.
   const latest = useRef(incidents);
-  latest.current = incidents;
+  useEffect(() => {
+    latest.current = incidents;
+  }, [incidents]);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -70,7 +75,12 @@ export function MapView() {
         map.addSource(SOURCE, { type: 'geojson', data: toGeoJson(latest.current) });
         map.addLayer({
           id: 'incidents-halo', type: 'circle', source: SOURCE,
-          paint: { 'circle-radius': 14, 'circle-opacity': 0.18, 'circle-color': ['get', 'color'] },
+          // 공사는 수가 많고 오래 이어져 후광 없이 흐린 점만 둔다.
+          paint: {
+            'circle-radius': ['case', ['==', ['get', 'category'], 'construction'], 0, 14],
+            'circle-opacity': 0.18,
+            'circle-color': ['get', 'color'],
+          },
         });
         map.addLayer({
           id: 'incidents-core', type: 'circle', source: SOURCE,
@@ -126,11 +136,22 @@ export function MapView() {
     (mapRef.current?.getSource(SOURCE) as GeoJSONSource | undefined)?.setData(toGeoJson(incidents));
   }, [incidents, ready]);
 
+  // 피드 · 지도 · 키보드 어디서 고르든 고른 돌발로 지도를 옮긴다.
+  const selLon = selected?.lon;
+  const selLat = selected?.lat;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !selectedKey || selLon === undefined || selLat === undefined) return;
+    const center: [number, number] = [selLon, selLat];
+    if (reducedMotion()) map.jumpTo({ center });
+    else map.easeTo({ center, duration: 800 });
+  }, [selectedKey, selLon, selLat, ready]);
+
   useEffect(() => {
     const top = feed[0];
     const map = mapRef.current;
     const ml = mlRef.current;
-    if (!ready || !map || !ml || !top || top.kind !== 'arrived' || !top.fresh) return;
+    if (!ready || !map || !ml || !top || !isLoudArrival(top)) return;
     if (pulsed.current.has(top.id)) return;
     pulsed.current.add(top.id);
     if (reducedMotion()) return;

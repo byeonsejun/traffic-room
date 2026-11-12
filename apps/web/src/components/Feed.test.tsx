@@ -43,3 +43,10 @@ test('only fresh cards get the arrival animation', () => {
   expect(cards[0]!.classList.contains('is-new')).toBe(true);
   expect(cards[1]!.classList.contains('is-new')).toBe(false);
 });
+
+test('a fresh construction card comes in quietly', () => {
+  const w = inc('w', { category: 'construction' });
+  useConsole.setState({ incidents: { w }, feed: [item(4, 'arrived', w, true)] });
+  render(<Feed />);
+  expect(document.querySelector('.ev')!.classList.contains('is-new')).toBe(false);
+});

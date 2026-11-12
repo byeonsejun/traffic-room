@@ -130,3 +130,17 @@ test('unmount closes the realtime client and stops snapshot retries', async () =
   expect(clients).toHaveLength(0);
   expect(fetchMock.mock.calls.filter(([p]) => p === '/api/snapshot')).toHaveLength(2);
 });
+
+test('a fresh construction arrival does not bump the count, an accident does', async () => {
+  snapshots = [() => ok(snap(0))];
+  await mount();
+  const arrive = (id: number, category: 'construction' | 'accident') =>
+    act(() => useConsole.getState().applyServerMessage({
+      id, type: 'incident.arrived', ts: new Date().toISOString(),
+      payload: { incident: { ...snap(0, [`k${id}`]).incidents[0]!, category } },
+    }, new Date()));
+  arrive(1, 'construction');
+  expect(document.querySelector('.count')!.classList.contains('is-bump')).toBe(false);
+  arrive(2, 'accident');
+  expect(document.querySelector('.count')!.classList.contains('is-bump')).toBe(true);
+});
