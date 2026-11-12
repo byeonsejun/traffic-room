@@ -1,0 +1,19 @@
+:root {
+  --asphalt: #0c131d;
+  --panel: #111b28;
+  --line: #1d2a3a;
+  --ink: #dce4ee;
+  --mute: #7c8a9b;
+  --flow: #2bd47d;
+  --slow: #f5b83d;
+  --jam: #ff4d4f;
+  --info: #5aa9ff;
+}
+
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--asphalt);
+  color: var(--ink);
+  font-family: "IBM Plex Sans KR", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
