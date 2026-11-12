@@ -33,7 +33,7 @@ ITS는 서비스별로 월 1,000건까지 부를 수 있다. 수집기와 실시
 
 실시간 서버의 CCTV 주소 새로고침은 꺼 두어(`CCTV_REFRESH=off`) ITS 호출이 없다. 목록 수집만 186건이라 한도 안이다. 한도에 가까워지면 ITS 마이페이지의 서비스별 집계로 확인한다.
 
-실시간 서버는 DB를 30분에 한 번만 조회한다. Neon 컴퓨트가 5분 유휴 후 자동으로 멈추게 두려는 것이다. 
+실시간 서버는 DB를 30분에 한 번만 조회한다. Neon 컴퓨트가 5분 유휴 후 자동으로 멈추게 두려는 것이다.
 
 ## 수집은 국내 회선의 Mac에서
 
@@ -66,6 +66,10 @@ ITS(`openapi.its.go.kr:9443`)는 클라우드와 데이터센터 IP의 접속을
    launchctl kickstart gui/$(id -u)/com.traffic-room.collector
    tail ~/Library/Logs/traffic-room-collector.log
    ```
+
+저장소가 `~/Desktop` 아래에 있으면 macOS가 launchd가 띄운 bash의 읽기를 막을 수 있다(파일 및 폴더 또는 전체 디스크 접근 권한). 처음 `launchctl kickstart`를 한 뒤 로그를 확인하고, "Operation not permitted"가 보이면 `/bin/bash`에 접근 권한을 주거나 저장소를 Desktop 밖으로 옮긴다.
+
+같은 시각에 두 번 도는 것은 스크립트가 막는다. 잠금 디렉터리(`~/Library/Application Support/traffic-room/collect.lock`)가 잡혀 있으면 `SKIP locked`, 직전 성공이 10분 안이면(CCTV 목록은 같은 8시간 구간이면) `SKIP recent`로 기록하고 넘어간다. `--cctvs`는 CCTV 목록 기록을, `--force`는 두 기록을 무시한다. 30분 넘은 잠금은 낡은 것으로 보고 넘겨받는다.
 
 ### 멈추려면
 
