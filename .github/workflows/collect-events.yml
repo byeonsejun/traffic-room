@@ -1,7 +1,7 @@
+# ITS 가 클라우드 IP(GitHub Actions 포함)의 접속을 막아서 이 워크플로는 예약 실행하지 않는다.
+# 수집은 국내 회선의 Mac 에서 scripts/collect-local.sh 로 돌린다(docs/deploy.md). 수동 실행용으로만 남겨 둔다.
 name: collect-events
 on:
-  schedule:
-    - cron: '5 * * * *'
   workflow_dispatch:
 
 # 같은 워크플로가 겹쳐 돌아 DB 쓰기가 경합하지 않도록 한 번에 하나만 실행한다.
@@ -11,8 +11,6 @@ concurrency:
 
 permissions:
   contents: read
-
-# 60일 무활동으로 예약 실행이 꺼지는 것은 collect-cctvs 의 keepalive 가 두 워크플로 모두 막는다.
 
 jobs:
   collect:

@@ -1,7 +1,7 @@
+# ITS 가 클라우드 IP(GitHub Actions 포함)의 접속을 막아서 이 워크플로는 예약 실행하지 않는다.
+# 수집은 국내 회선의 Mac 에서 scripts/collect-local.sh 로 돌린다(docs/deploy.md). 수동 실행용으로만 남겨 둔다.
 name: collect-cctvs
 on:
-  schedule:
-    - cron: '15 */8 * * *'
   workflow_dispatch:
 
 # 같은 워크플로가 겹쳐 돌아 DB 쓰기가 경합하지 않도록 한 번에 하나만 실행한다.
@@ -29,19 +29,3 @@ jobs:
           ITS_MODE: live
           ITS_API_KEY: ${{ secrets.ITS_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
-  # 저장소에 60일간 활동이 없으면 예약 실행이 멈춘다. 커밋 없이 API로 워크플로를 다시 활성화해 막는다.
-  # 8시간마다 한 번이면 충분해서, 매시 도는 collect-events 몫까지 여기서 함께 켠다.
-  keepalive:
-    needs: collect
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      actions: write
-    steps:
-      - run: |
-          gh workflow enable collect-cctvs.yml --repo "$GITHUB_REPOSITORY"
-          gh workflow enable collect-events.yml --repo "$GITHUB_REPOSITORY"
-        env:
-          GH_TOKEN: ${{ github.token }}

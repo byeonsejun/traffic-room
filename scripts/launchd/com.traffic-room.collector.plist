@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- __REPO__ 와 __HOME__ 을 sed 로 바꿔서 ~/Library/LaunchAgents 에 둔다. docs/deploy.md 참고. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.traffic-room.collector</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/scripts/collect-local.sh</string>
+  </array>
+  <!-- 매시 5분. Mac 이 잠든 사이 놓친 실행은 깨어난 뒤 한 번만 돈다. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Minute</key>
+    <integer>5</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/traffic-room-collector.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/traffic-room-collector.err.log</string>
+</dict>
+</plist>
