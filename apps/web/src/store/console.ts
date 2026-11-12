@@ -91,6 +91,7 @@ export const useConsole = create<ConsoleState>()((set) => ({
     }),
 
   setStatus: (status, retryInMs) => set({ status, retryInMs }),
-  select: (selectedKey) => set({ selectedKey }),
+  // 다른 돌발을 고르면 가장 가까운 CCTV부터 다시 보여 준다.
+  select: (selectedKey) => set({ selectedKey, cctvId: null }),
   setCctv: (cctvId) => set({ cctvId }),
 }));

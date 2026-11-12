@@ -10,12 +10,143 @@
   --info: #5aa9ff;
 }
 
+*, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--asphalt);
   color: var(--ink);
   font-family: var(--font-plex), "IBM Plex Sans KR", system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, p, ul { margin: 0; }
+ul { padding: 0; list-style: none; }
+:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 4px; }
+
+/* 전체 배치 */
+.console {
+  display: grid;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 640px;
+  grid-template-columns: 270px 1fr 360px;
+  grid-template-rows: 56px 1fr;
+}
+.console > .left, .console > .map, .console > .right { min-height: 0; }
+
+/* 상단 바 */
+.top {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--line);
+}
+.top h1 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
+.top .delay {
+  font-size: 12px; color: var(--mute); white-space: nowrap;
+  border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px;
+}
+.top .clock { margin-left: auto; font-size: 15px; color: var(--mute); min-width: 4.6em; text-align: right; }
+
+.conn { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--mute); min-width: 0; }
+.conn .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--mute); }
+.conn.is-ok { color: var(--ink); }
+.conn.is-ok .dot { background: var(--flow); }
+.conn.is-wait .dot { background: var(--slow); animation: breathe 1.6s ease-in-out infinite; }
+.conn.is-ok .dot.is-beat { animation: beat 0.9s ease-out; }
+@keyframes beat {
+  from { box-shadow: 0 0 0 0 rgb(43 212 125 / 0.7); }
+  to { box-shadow: 0 0 0 10px rgb(43 212 125 / 0); }
+}
+@keyframes breathe { 50% { opacity: 0.35; } }
+
+/* 왼쪽 지표 */
+.left {
+  padding: 22px 20px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  overflow: auto;
+}
+.left h2, .feed h2 { font-size: 13px; font-weight: 500; color: var(--mute); margin-bottom: 12px; }
+.kpi .count {
+  font-weight: 300; font-size: 60px; line-height: 1; color: #fff; letter-spacing: -0.02em;
+  transition: color 0.6s;
+}
+.kpi .count small { font-size: 20px; color: var(--mute); margin-left: 6px; letter-spacing: 0; }
+.kpi .count.is-bump { color: var(--jam); transition-duration: 0.15s; }
+.trow {
+  display: grid; grid-template-columns: 76px 1fr 34px; align-items: center; gap: 10px;
+  font-size: 13px; margin-bottom: 10px;
+}
+.trow .bar { height: 6px; border-radius: 3px; background: #1a2636; overflow: hidden; }
+.trow .bar span { display: block; height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+.trow .n { text-align: right; color: var(--mute); }
+.trow.is-zero .name { color: var(--mute); }
+.left .about { margin-top: auto; font-size: 12px; line-height: 1.6; color: var(--mute); }
+
+/* 지도 */
+.map { position: relative; overflow: hidden; }
+.notices {
+  position: absolute; left: 16px; top: 16px; right: 16px; z-index: 2; pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+}
+.notices p {
+  font-size: 13px; color: var(--ink); background: rgb(17 27 40 / 0.92);
+  border: 1px solid var(--line); border-left: 3px solid var(--slow); border-radius: 4px; padding: 8px 12px;
+}
+
+/* 오른쪽: CCTV + 피드 */
+.right { border-left: 1px solid var(--line); display: flex; flex-direction: column; }
+.right .cctv-panel { flex: none; background: transparent; }
+.feed { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px 14px 8px; }
+.feed h2 { margin-bottom: 6px; }
+.feed ul { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -6px; padding: 0 6px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.feed-empty { font-size: 13px; color: var(--mute); line-height: 1.6; }
+.ev {
+  display: grid; grid-template-columns: 4px 1fr auto; gap: 12px;
+  width: 100%; padding: 11px 10px 11px 0; border: 0; border-radius: 6px;
+  font: inherit; color: inherit; text-align: left; background: none;
+  transition: background 0.4s;
+}
+button.ev { cursor: pointer; }
+button.ev:hover { background: #142030; }
+button.ev[aria-pressed='true'] { background: #1a2a3e; }
+.ev .k { border-radius: 2px; }
+.ev .txt { min-width: 0; }
+.ev .t1 {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  font-size: 14px; line-height: 1.45;
+}
+.ev .t2 { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mute); margin-top: 3px; }
+.ev .tm { font-size: 12px; color: var(--mute); padding-top: 2px; }
+.ev .tag { color: var(--flow); border: 1px solid color-mix(in srgb, var(--flow) 45%, transparent); border-radius: 3px; padding: 0 5px; line-height: 16px; }
+.ev.is-cleared .t1 { color: var(--mute); }
+.ev.is-cleared .k { opacity: 0.35; }
+.ev.is-new { animation: arrive 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), settle 2.6s ease-out; }
+@keyframes arrive { from { transform: translateY(-14px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes settle { from { background: #1a2a3e; } to { background: transparent; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ev.is-new, .conn .dot, .conn .dot.is-beat { animation: none !important; }
+  .kpi .count, .trow .bar span { transition: none; }
+}
+
+/* 1100px 이하: 지도 → CCTV → 피드 → 지표 */
+@media (max-width: 1100px) {
+  .console { grid-template-columns: 1fr; grid-template-rows: auto 52vh auto auto; height: auto; min-height: 0; }
+  .top { min-height: 56px; }
+  .console > .right { order: 2; border-left: 0; }
+  .console > .left { order: 3; border-right: 0; border-top: 1px solid var(--line); overflow: visible; }
+  .feed ul { max-height: 420px; }
+}
+@media (max-width: 640px) {
+  .top { flex-wrap: wrap; row-gap: 4px; column-gap: 12px; padding: 10px 16px; }
+  .top .conn { order: 3; flex-basis: 100%; }
+  .left { padding: 22px 16px; }
 }
 
 .map-view { width: 100%; height: 100%; background: var(--asphalt); }

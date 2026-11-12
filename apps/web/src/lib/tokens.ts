@@ -24,3 +24,12 @@ export function categoryColor(c: Category): string {
     default: return tokens.mute;
   }
 }
+
+export const CATEGORY_LABEL: Record<Category, string> = {
+  accident: '교통사고',
+  breakdown: '고장·낙하물',
+  weather: '기상·재난',
+  construction: '공사',
+  report: '시민 신고',
+  other: '기타',
+};

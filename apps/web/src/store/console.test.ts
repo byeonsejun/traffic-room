@@ -103,3 +103,10 @@ test('setStatus, select and setCctv', () => {
   s.setCctv('c1');
   expect(useConsole.getState()).toMatchObject({ status: 'retrying', retryInMs: 2000, selectedKey: 'a', cctvId: 'c1' });
 });
+
+test('selecting an incident drops the previously picked camera so the nearest one plays first', () => {
+  const s = useConsole.getState();
+  s.setCctv('c1');
+  s.select('a');
+  expect(useConsole.getState()).toMatchObject({ selectedKey: 'a', cctvId: null });
+});
