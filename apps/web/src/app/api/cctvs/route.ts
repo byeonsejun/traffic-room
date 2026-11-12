@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logFailure } from '@/lib/log';
 import { createNeonDb, getCctvs } from '@traffic-room/db';
 import { createItsClient } from '@traffic-room/its';
 
@@ -18,7 +19,8 @@ export async function GET() {
       return NextResponse.json(await createItsClient({ mode: 'fixture' }).cctvs('ex'), { headers: OK_HEADERS });
     }
     return NextResponse.json(await getCctvs(createNeonDb(url)), { headers: OK_HEADERS });
-  } catch {
+  } catch (e) {
+    logFailure('api/cctvs', e);
     return NextResponse.json(FAIL, { status: 503, headers: NO_STORE });
   }
 }

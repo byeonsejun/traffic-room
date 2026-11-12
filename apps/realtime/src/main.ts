@@ -3,19 +3,16 @@ import { createItsClient } from '@traffic-room/its';
 import { createHub } from './hub.ts';
 import { createScheduler } from './scheduler.ts';
 import { buildServer } from './server.ts';
+import { readConfig } from './config.ts';
 
 // 키와 접속 문자열은 어디에도 찍지 않는다.
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-  console.error('DATABASE_URL 환경변수가 필요합니다.');
+const read = readConfig(process.env);
+if (!read.ok) {
+  console.error(read.error);
   process.exit(1);
 }
-const port = Number(process.env.PORT ?? 8787);
-const mode = process.env.ITS_MODE === 'live' ? 'live' : 'fixture';
-const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
+for (const w of read.warnings) console.warn(`[config] ${w}`);
+const { databaseUrl, port, mode, allowedOrigins } = read.config;
 
 const db = createNeonDb(databaseUrl);
 const its = createItsClient({ mode, apiKey: process.env.ITS_API_KEY });

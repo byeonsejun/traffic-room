@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logFailure } from '@/lib/log';
 import { createNeonDb, getActiveIncidents, lastCollectedAt, latestEmittedId } from '@traffic-room/db';
 import { createItsClient } from '@traffic-room/its';
 import { DELAY_MINUTES } from '@traffic-room/shared';
@@ -33,7 +34,8 @@ export async function GET() {
       incidents, latestId, collectedAt: collected ? collected.toISOString() : null, delayMinutes: DELAY_MINUTES,
     };
     return NextResponse.json(body, { headers: OK_HEADERS });
-  } catch {
+  } catch (e) {
+    logFailure('api/snapshot', e);
     return NextResponse.json(FAIL, { status: 503, headers: NO_STORE });
   }
 }

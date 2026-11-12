@@ -60,6 +60,30 @@ describe('with DATABASE_URL', () => {
     expect((await res.json()).message).toBe('상황 정보를 불러오지 못했어요. 잠시 뒤 새로고침해 주세요.');
   });
 
+  test('a 503 logs only the error code or name, never the message or url', async () => {
+    const secret = 'postgres://user:hunter2@db.example/neondb';
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      h.db = {
+        query: async () => { throw Object.assign(new Error(`connect ${secret} failed`), { code: 'ECONNREFUSED' }); },
+        batch: async () => {},
+      };
+      expect((await getSnapshot()).status).toBe(503);
+      h.db = { query: async () => { throw new TypeError(`bad ${secret}`); }, batch: async () => {} };
+      expect((await getCctvs()).status).toBe(503);
+      const lines = log.mock.calls.map((c) => c.map(String).join(' '));
+      expect(lines).toHaveLength(2);
+      expect(lines[0]).toContain('ECONNREFUSED');
+      expect(lines[1]).toContain('TypeError');
+      for (const l of lines) {
+        expect(l).not.toContain('hunter2');
+        expect(l).not.toContain('postgres://');
+      }
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   test('cctvs come from the DB', async () => {
     await upsertCctvs(db, [{ id: 'c1', name: '서초', lon: 127, lat: 37, url: 'https://x/y.m3u8', fetchedAt: new Date().toISOString() }]);
     const res = await getCctvs();
