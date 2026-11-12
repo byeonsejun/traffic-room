@@ -7,6 +7,10 @@ const targets = {
   www: 'https://www.its.go.kr/',
   api: 'https://openapi.its.go.kr:9443/eventInfo?apiKey=test&type=all&eventType=all&getType=json',
   cctv: 'https://cctvsec.ktict.co.kr/',
+  datagokr: 'https://apis.data.go.kr/',
+  dataex: 'https://data.ex.co.kr/',
+  utic: 'https://www.utic.go.kr/',
+  seoul: 'http://openapi.seoul.go.kr:8088/',
 } as const;
 
 async function probe(url: string) {
