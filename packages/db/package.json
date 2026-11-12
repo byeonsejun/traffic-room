@@ -1,0 +1,19 @@
+{
+  "name": "@traffic-room/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./test-db": "./src/test-db.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "migrate": "node src/migrate.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "@neondatabase/serverless": "^1.2.0",
+    "@traffic-room/shared": "workspace:*"
+  }
+}
