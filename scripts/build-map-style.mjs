@@ -43,6 +43,8 @@ for (const l of style.layers) {
   } else if (l.type === 'symbol') {
     set(l, 'paint', 'text-color', C.label);
     set(l, 'paint', 'text-halo-color', C.halo);
+    // 대문자 라벨은 쓰지 않는다(디자인 원칙). 원본 스타일의 대문자 변환을 걷어 낸다.
+    if (l.layout) delete l.layout['text-transform'];
     if (l.id !== 'highway_name_motorway') {
       set(l, 'layout', 'text-field', ['coalesce', ['get', 'name:ko'], ['get', 'name']]);
     }
