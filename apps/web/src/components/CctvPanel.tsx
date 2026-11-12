@@ -7,6 +7,7 @@ import { useConsole } from '@/store/console';
 
 const DEFAULT_NAME = '[경부선] 서초';
 const GUIDE = '이 CCTV 영상을 지금 불러올 수 없어요. 다른 CCTV를 골라 보세요.';
+const REFRESH_WAIT_MS = 10_000;
 const HLS_TYPE = 'application/vnd.apple.mpegurl';
 
 const chipLabel = (name: string) => name.replace(/\[.*?\]\s*/, '');
@@ -32,6 +33,7 @@ export function CctvPanel({ cctvs, send }: { cctvs: Cctv[]; send: (m: ClientMess
   const sendRef = useRef(send);
   sendRef.current = send;
   const asked = useRef(new Set<string>());
+  const pending = useRef<{ key: string; ov: unknown } | null>(null);
   const [failedKey, setFailedKey] = useState<string | null>(null);
   const failed = !!activeId && failedKey === `${activeId}|${url}`;
 
@@ -41,12 +43,16 @@ export function CctvPanel({ cctvs, send }: { cctvs: Cctv[]; send: (m: ClientMess
     const key = `${activeId}|${url}`;
     let cancelled = false;
     let hls: { destroy(): void } | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const onFatal = () => {
       if (cancelled) return;
       if (!asked.current.has(activeId)) {
         asked.current.add(activeId);
         sendRef.current({ type: 'cctv.request', cctvId: activeId, refresh: true });
+        // No usable answer (same url, silence, socket down) must not leave a blank player.
+        pending.current = { key, ov: useConsole.getState().cctvUrlOverride };
+        timer = setTimeout(() => setFailedKey(key), REFRESH_WAIT_MS);
       } else {
         setFailedKey(key);
       }
@@ -77,12 +83,20 @@ export function CctvPanel({ cctvs, send }: { cctvs: Cctv[]; send: (m: ClientMess
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
+      pending.current = null;
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('error', onFatal);
       hls?.destroy();
       video.removeAttribute('src');
     };
   }, [activeId, url]);
+
+  // An answer carrying the url that just failed counts as failure right away.
+  useEffect(() => {
+    const p = pending.current;
+    if (p && override !== p.ov && activeId && override[activeId] === url) setFailedKey(p.key);
+  }, [override, activeId, url]);
 
   // Fullscreen: native API when allowed, otherwise a fixed overlay.
   const [native, setNative] = useState(false);

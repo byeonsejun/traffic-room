@@ -3,15 +3,18 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { Cctv, Incident } from '@traffic-room/shared';
 import { useConsole } from '@/store/console';
 
-const hlsState = vi.hoisted(() => ({ handlers: {} as Record<string, (...a: unknown[]) => void>, destroyed: 0 }));
+type Inst = { handlers: Record<string, (...a: unknown[]) => void>; loaded: string[]; destroyed: boolean };
+const hlsState = vi.hoisted(() => ({ instances: [] as Inst[] }));
 vi.mock('hls.js', () => {
   class FakeHls {
     static isSupported() { return true; }
     static Events = { ERROR: 'hlsError', MANIFEST_PARSED: 'hlsManifestParsed' };
-    on(ev: string, fn: (...a: unknown[]) => void) { hlsState.handlers[ev] = fn; }
-    loadSource() {}
+    inst: Inst = { handlers: {}, loaded: [], destroyed: false };
+    constructor() { hlsState.instances.push(this.inst); }
+    on(ev: string, fn: (...a: unknown[]) => void) { this.inst.handlers[ev] = fn; }
+    loadSource(u: string) { this.inst.loaded.push(u); }
     attachMedia() {}
-    destroy() { hlsState.destroyed++; }
+    destroy() { this.inst.destroyed = true; this.inst.handlers = {}; }
   }
   return { default: FakeHls };
 });
@@ -34,16 +37,29 @@ const inc: Incident = {
 };
 
 const GUIDE = '이 CCTV 영상을 지금 불러올 수 없어요. 다른 CCTV를 골라 보세요.';
-const fatal = () => hlsState.handlers['hlsError']!('hlsError', { fatal: true, type: 'networkError' });
+const live = () => hlsState.instances.filter((i) => !i.destroyed).at(-1);
+const fatal = () => live()!.handlers['hlsError']!('hlsError', { fatal: true, type: 'networkError' });
+const ready = (n: number) =>
+  waitFor(() => {
+    expect(hlsState.instances).toHaveLength(n);
+    expect(live()).toBe(hlsState.instances[n - 1]);
+  });
+const answer = (cctvId: string, url: string | null, reason: 'cached' | 'refreshed' | 'unavailable') =>
+  act(() => {
+    useConsole.getState().applyServerMessage(
+      { id: 0, type: 'cctv.url', ts: new Date().toISOString(), payload: { cctvId, url, reason } } as never,
+      new Date(),
+    );
+  });
 
 beforeEach(() => {
   useConsole.setState(useConsole.getInitialState(), true);
-  hlsState.handlers = {};
-  hlsState.destroyed = 0;
+  hlsState.instances = [];
   HTMLMediaElement.prototype.play = vi.fn().mockResolvedValue(undefined);
 });
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   delete (document as unknown as Record<string, unknown>).fullscreenEnabled;
 });
 
@@ -94,18 +110,40 @@ test('uses the Fullscreen API when available and syncs the label on fullscreench
   expect(screen.getByRole('button', { name: '크게 보기' })).toBeTruthy();
 });
 
-test('on fatal playback error it asks the server for a fresh url once', async () => {
+test('on fatal error it asks once; a different fresh url is loaded without guidance', async () => {
   const send = vi.fn();
   render(<CctvPanel cctvs={cams} send={send} />);
-  await waitFor(() => expect(hlsState.handlers['hlsError']).toBeTruthy());
+  await ready(1);
   act(() => fatal());
   expect(send).toHaveBeenCalledTimes(1);
   expect(send).toHaveBeenCalledWith({ type: 'cctv.request', cctvId: 'seocho', refresh: true });
-  act(() => { useConsole.setState({ cctvUrlOverride: { seocho: 'https://x/fresh.m3u8' } }); });
-  await waitFor(() => expect(hlsState.destroyed).toBeGreaterThan(0));
-  await waitFor(() => expect(hlsState.handlers['hlsError']).toBeTruthy());
+  answer('seocho', 'https://x/fresh.m3u8', 'refreshed');
+  await ready(2);
+  expect(hlsState.instances[0]!.destroyed).toBe(true);
+  expect(live()!.loaded).toEqual(['https://x/fresh.m3u8']);
+  expect(screen.queryByText(GUIDE)).toBeNull();
   act(() => fatal());
   expect(send).toHaveBeenCalledTimes(1);
+  expect(screen.getByText(GUIDE)).toBeTruthy();
+});
+
+test('refresh answered with the same url shows guidance', async () => {
+  render(<CctvPanel cctvs={cams} send={vi.fn()} />);
+  await ready(1);
+  act(() => fatal());
+  expect(screen.queryByText(GUIDE)).toBeNull();
+  answer('seocho', 'https://x/seocho.m3u8', 'cached');
+  expect(screen.getByText(GUIDE)).toBeTruthy();
+});
+
+test('no answer within 10s shows guidance', async () => {
+  render(<CctvPanel cctvs={cams} send={vi.fn()} />);
+  await ready(1);
+  vi.useFakeTimers();
+  act(() => fatal());
+  act(() => { vi.advanceTimersByTime(9_999); });
+  expect(screen.queryByText(GUIDE)).toBeNull();
+  act(() => { vi.advanceTimersByTime(1); });
   expect(screen.getByText(GUIDE)).toBeTruthy();
 });
 
