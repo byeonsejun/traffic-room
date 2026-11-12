@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Incident } from './incident';
 
 export const DELAY_MINUTES = 60;
 
@@ -66,3 +67,6 @@ export function parseClientMessage(raw: string): ClientMessage | null {
   const r = clientMessageSchema.safeParse(parseJson(raw));
   return r.success ? r.data : null;
 }
+
+// Incident 인터페이스와 zod 스키마가 어긋나면 컴파일 단계에서 막는다.
+incidentSchema satisfies z.ZodType<Incident>;
