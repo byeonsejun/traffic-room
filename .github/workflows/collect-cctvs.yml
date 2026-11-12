@@ -31,6 +31,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
   # 저장소에 60일간 활동이 없으면 예약 실행이 멈춘다. 커밋 없이 API로 워크플로를 다시 활성화해 막는다.
+  # 8시간마다 한 번이면 충분해서, 매시 도는 collect-events 몫까지 여기서 함께 켠다.
   keepalive:
     needs: collect
     if: always()
@@ -39,6 +40,8 @@ jobs:
     permissions:
       actions: write
     steps:
-      - run: gh workflow enable collect-cctvs.yml --repo "$GITHUB_REPOSITORY"
+      - run: |
+          gh workflow enable collect-cctvs.yml --repo "$GITHUB_REPOSITORY"
+          gh workflow enable collect-events.yml --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
