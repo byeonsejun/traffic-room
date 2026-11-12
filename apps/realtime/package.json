@@ -4,9 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "node --watch src/main.ts",
+    "start": "node src/main.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@traffic-room/shared": "workspace:*"
+    "@fastify/websocket": "^11.3.7",
+    "@traffic-room/db": "workspace:*",
+    "@traffic-room/its": "workspace:*",
+    "@traffic-room/shared": "workspace:*",
+    "fastify": "^5.12.8"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2"
   }
 }
