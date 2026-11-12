@@ -10,6 +10,7 @@ import { useConsole } from '@/store/console';
 const KOREA_BOUNDS: [number, number, number, number] = [124.5, 33.0, 131.0, 38.7];
 const SOURCE = 'incidents';
 const PULSE_MS = 1400 * 3;
+const WORKER_PATH = '/maplibre-gl-worker.mjs'; // scripts/copy-maplibre-worker.mjs 가 dev · build 전에 복사한다.
 
 const toGeoJson = (incidents: Record<string, Incident>) => ({
   type: 'FeatureCollection' as const,
@@ -46,6 +47,9 @@ export function MapView() {
       const ml = await import('maplibre-gl');
       if (cancelled || !box.current) return;
       mlRef.current = ml;
+      // 번들 안에서는 워커 기본 주소(import.meta.url 옆)가 깨지므로 public/ 에 복사한 워커를 쓴다.
+      // 버전을 붙여 패키지를 올렸을 때 예전 워커가 캐시에서 나오지 않게 한다.
+      ml.setWorkerUrl(`${WORKER_PATH}?v=${ml.getVersion()}`);
       map = new ml.Map({
         container: box.current,
         style: '/map-style.json',

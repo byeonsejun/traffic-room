@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# maplibre 워커 번들(빌드할 때 node_modules 에서 복사)
+/public/maplibre-gl-worker.mjs
