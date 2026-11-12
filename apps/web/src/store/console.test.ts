@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from 'vitest';
 import type { Incident, ServerMessage } from '@traffic-room/shared';
-import { useConsole } from './console.ts';
+import { needsResync, useConsole } from './console.ts';
 
 const NOW = new Date('2026-11-12T10:00:00+09:00');
 const inc = (key: string): Incident => ({
@@ -26,6 +26,32 @@ test('applySnapshot fills incidents and lastId', () => {
   expect(Object.keys(s.incidents).sort()).toEqual(['a', 'b']);
   expect(s.lastId).toBe(12);
   expect(s.feed).toEqual([]);
+});
+
+test('applySnapshot never lowers lastId by default', () => {
+  useConsole.setState({ lastId: 20 });
+  useConsole.getState().applySnapshot({ incidents: [inc('a')], latestId: 12, collectedAt: null, delayMinutes: 60 });
+  expect(useConsole.getState().lastId).toBe(20);
+});
+
+test('applySnapshot with reset replaces incidents and takes the snapshot lastId even if lower', () => {
+  useConsole.setState({ lastId: 20, incidents: { old: inc('old') }, selectedKey: 'old' });
+  useConsole.getState().applySnapshot(
+    { incidents: [inc('a')], latestId: 12, collectedAt: null, delayMinutes: 60 }, { reset: true },
+  );
+  const s = useConsole.getState();
+  expect(Object.keys(s.incidents)).toEqual(['a']);
+  expect(s.lastId).toBe(12);
+  expect(s.selectedKey).toBeNull();
+});
+
+test.each([
+  [10, 210, false],
+  [10, 211, true],
+  [10, 10, false],
+  [10, 9, true],
+])('needsResync(lastId=%i, latestId=%i) is %s', (lastId, latestId, want) => {
+  expect(needsResync(lastId, latestId)).toBe(want);
 });
 
 test('arrival adds incident, prepends feed (max 30) and advances lastId', () => {

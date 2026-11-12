@@ -20,6 +20,16 @@ export type FeedItem = {
 };
 
 const FEED_MAX = 30;
+/** 서버가 resume 한 번에 돌려주는 최대 건수(apps/realtime 의 RESUME_LIMIT 와 같다). */
+export const RESUME_LIMIT = 200;
+
+/**
+ * hello 의 latestId 로 보아 resume 만으로는 따라잡을 수 없으면 true.
+ * 200건 넘게 밀렸거나, 서버 로그가 우리 lastId 보다 뒤에 있으면(초기화 등) 스냅샷부터 다시 받는다.
+ */
+export function needsResync(lastId: number, latestId: number): boolean {
+  return latestId - lastId > RESUME_LIMIT || latestId < lastId;
+}
 const FRESH_WITHIN_MS = 120_000;
 
 interface ConsoleState {
@@ -31,7 +41,8 @@ interface ConsoleState {
   selectedKey: string | null;
   cctvId: string | null;
   cctvUrlOverride: Record<string, string | null>;
-  applySnapshot(s: Snapshot): void;
+  /** reset 이면 lastId 를 스냅샷 값으로 맞춘다(더 낮아도). 아니면 lastId 는 내려가지 않는다. */
+  applySnapshot(s: Snapshot, opts?: { reset?: boolean }): void;
   applyServerMessage(m: ServerMessage, now: Date): void;
   setStatus(s: ConnStatus, retryInMs?: number): void;
   select(key: string | null): void;
@@ -48,11 +59,16 @@ export const useConsole = create<ConsoleState>()((set) => ({
   cctvId: null,
   cctvUrlOverride: {},
 
-  applySnapshot: (s) =>
-    set((st) => ({
-      incidents: Object.fromEntries(s.incidents.map((i) => [i.key, i])),
-      lastId: Math.max(st.lastId, s.latestId),
-    })),
+  applySnapshot: (s, opts) =>
+    set((st) => {
+      const incidents = Object.fromEntries(s.incidents.map((i) => [i.key, i]));
+      if (!opts?.reset) return { incidents, lastId: Math.max(st.lastId, s.latestId) };
+      return {
+        incidents,
+        lastId: s.latestId,
+        selectedKey: st.selectedKey && incidents[st.selectedKey] ? st.selectedKey : null,
+      };
+    }),
 
   applyServerMessage: (m, now) =>
     set((st) => {
