@@ -83,7 +83,7 @@
 ## 5. 사용자가 정한 것
 
 - 주제: 전국 고속도로 · 국도 관제(ITS 데이터로 통일, 업비트 같은 무관한 데이터는 넣지 않음).
-- 시각 방향: **시안 C "야간 속도 지도"** 발전형(시안 파일: `.brainstorm-traffic/.superpowers/brainstorm/*/content/direction-c-v3.html`).
+- 시각 방향: **시안 C "야간 속도 지도"** 발전형(시안 파일: `docs/design/direction-c-mockup.html`, 비교했던 A·B·C 시안: `docs/design/visual-directions-abc.html`).
   - 어두운 지도 위에 도로를 속도별 색(원활 · 서행 · 정체)으로 빛나게 그린다.
   - **도로 위 빛이 흐르는 속도 = 실제 통행 속도**. 이 화면의 시그니처다.
   - 돌발상황 지점에서 파동이 퍼진다. 새로 도착하면 더 큰 파동, 피드 카드 등장, 카운터 증가, 연결 표시 깜빡임이 한 번에 일어난다.

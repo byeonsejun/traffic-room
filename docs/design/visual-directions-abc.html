@@ -1,0 +1,186 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Gothic+A1:wght@400;700;900&family=IBM+Plex+Sans+KR:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  .dir-wrap{display:flex;flex-direction:column;gap:28px}
+  .frame{border-radius:10px;overflow:hidden;width:100%;aspect-ratio:16/8.4;position:relative;font-family:'IBM Plex Sans KR',sans-serif}
+  .frame svg{display:block}
+  .tab{font-variant-numeric:tabular-nums}
+
+  /* ── A. 전광판 ─────────────────────────── */
+  .va{background:#15181A;color:#E8E3D6;display:grid;grid-template-columns:1fr 300px;grid-template-rows:96px 1fr}
+  .va-led{grid-column:1/3;background:#050706;border-bottom:3px solid #2A2F31;display:flex;align-items:center;gap:28px;padding:0 28px;position:relative;overflow:hidden}
+  .va-led .msg{font-family:'Do Hyeon',sans-serif;font-size:46px;letter-spacing:.04em;color:#FFB21A;white-space:nowrap;text-shadow:0 0 14px rgba(255,178,26,.55)}
+  .va-led .msg b{color:#FF5A3C;font-weight:400;text-shadow:0 0 14px rgba(255,90,60,.6)}
+  .va-led::after{content:"";position:absolute;inset:0;background:radial-gradient(circle,transparent 38%,#050706 46%) 0 0/5px 5px;pointer-events:none}
+  .va-map{position:relative;padding:18px}
+  .va-side{border-left:1px solid #2A2F31;padding:18px 18px 0;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+  .va-side h4{margin:0 0 4px;font-size:13px;font-weight:400;color:#8C8F88}
+  .va-item{display:grid;grid-template-columns:44px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid #24292B;font-size:13px}
+  .va-item .t{color:#FFB21A;font-family:'Do Hyeon';font-size:18px}
+  .va-item .r{color:#E8E3D6}
+  .va-item .m{color:#8C8F88;font-size:12px;margin-top:2px}
+  .va-count{position:absolute;left:28px;bottom:22px;font-family:'Do Hyeon';color:#FFB21A;font-size:64px;line-height:1}
+  .va-count small{display:block;font-family:'IBM Plex Sans KR';font-size:12px;color:#8C8F88;margin-top:6px}
+
+  /* ── B. 노선도 ─────────────────────────── */
+  .vb{background:#EDF1EF;color:#1D2A25;display:grid;grid-template-columns:1fr 330px}
+  .vb-map{position:relative}
+  .vb-head{position:absolute;left:26px;top:22px}
+  .vb-head h3{font-family:'Gothic A1';font-weight:900;font-size:30px;margin:0;letter-spacing:-.02em;color:#1D2A25}
+  .vb-head p{margin:4px 0 0;font-size:13px;color:#4E5E57}
+  .vb-feed{background:#00704A;color:#fff;padding:22px 20px;display:flex;flex-direction:column;gap:0;overflow:hidden}
+  .vb-feed h4{font-family:'Gothic A1';font-weight:700;font-size:15px;margin:0 0 12px;opacity:.85}
+  .vb-row{display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.18)}
+  .shield{width:36px;height:30px;display:grid;place-items:center;font-family:'Gothic A1';font-weight:900;font-size:14px;color:#fff;background:#2456A6;clip-path:polygon(0 18%,50% 0,100% 18%,100% 62%,50% 100%,0 62%);border-top:4px solid #E2231A}
+  .vb-row .r{font-family:'Gothic A1';font-weight:700;font-size:14px}
+  .vb-row .m{font-size:12px;opacity:.78;margin-top:2px}
+  .vb-row .t{font-size:12px;opacity:.78}
+
+  /* ── C. 야간 속도 지도 ─────────────────────── */
+  .vc{background:#0E1520;color:#D6DEE8;display:grid;grid-template-columns:250px 1fr 270px}
+  .vc-l{padding:22px 20px;display:flex;flex-direction:column;gap:22px;border-right:1px solid #1E2A38}
+  .vc-l .big{font-family:'IBM Plex Sans KR';font-weight:300;font-size:58px;line-height:1;color:#fff}
+  .vc-l .lbl{font-size:12px;color:#7D8B9C;margin-top:6px}
+  .vc-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;margin-top:10px}
+  .vc-map{position:relative}
+  .vc-r{border-left:1px solid #1E2A38;padding:18px;display:flex;flex-direction:column;gap:12px}
+  .cam{border-radius:6px;aspect-ratio:3/2;position:relative;overflow:hidden;background:linear-gradient(160deg,#27323F,#121A24 60%,#1B2531)}
+  .cam::before{content:"";position:absolute;left:-10%;right:-10%;top:58%;height:2px;background:repeating-linear-gradient(90deg,#F5B83D 0 18px,transparent 18px 34px);transform:rotate(-8deg);opacity:.7}
+  .cam::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 70% 64%,rgba(255,240,200,.45) 0 3px,transparent 4px),radial-gradient(circle at 58% 68%,rgba(255,80,80,.5) 0 2px,transparent 3px),radial-gradient(circle at 35% 72%,rgba(255,240,200,.4) 0 2px,transparent 3px)}
+  .cam span{position:absolute;left:10px;bottom:8px;font-size:12px;color:#fff;z-index:1}
+  .cam i{position:absolute;right:10px;top:8px;font-style:normal;font-size:11px;color:#fff;background:#FF4D4F;border-radius:3px;padding:1px 6px;z-index:1}
+  .vc-ev{font-size:13px;padding:10px 12px;border-radius:6px;background:#162130;border-left:3px solid #FF4D4F}
+  .vc-ev small{display:block;color:#7D8B9C;font-size:11px;margin-top:3px}
+  @keyframes ring{0%{r:4;opacity:.9}100%{r:22;opacity:0}}
+  .pulse{animation:ring 2.2s ease-out infinite;transform-box:fill-box}
+  @media (prefers-reduced-motion:reduce){.pulse{animation:none}}
+</style>
+
+<h2>관제 화면, 어떤 인상이 맞을까요?</h2>
+<p class="subtitle">세 시안 모두 오늘 ITS에서 받은 실제 돌발상황과 CCTV 이름으로 채웠어요. 레이아웃보다는 <b>분위기와 첫인상</b>을 비교해 주세요. 마음에 드는 걸 클릭하고, 섞고 싶은 부분은 터미널에 적어 주세요.</p>
+
+<div class="cards dir-wrap">
+
+<!-- ─────────── A ─────────── -->
+<div class="card" data-choice="a-vms" onclick="toggleSelect(this)">
+  <div class="card-image">
+    <div class="frame va">
+      <div class="va-led">
+        <div class="msg"><b>남해2지선</b> 기점방향 2차로 장애물 처리중 &nbsp;·&nbsp; 영동선 강풍주의</div>
+      </div>
+      <div class="va-map">
+        <svg viewBox="0 0 320 390" style="height:100%;margin:0 auto">
+          <path d="M64 89 104 68 160 42 204 17 224 60 260 102 288 162 292 238 300 280 272 310 248 319 216 331 160 344 120 365 80 370 48 374 40 348 52 314 56 272 72 242 56 204 28 170 64 149 72 119Z" fill="#1C2022" stroke="#3A4042" stroke-width="1"/>
+          <g stroke="#3A4042" stroke-width="2" fill="none">
+            <path d="M96 106 126 208 224 249 260 306"/><path d="M84 112 246 89"/><path d="M68 116 61 175 56 272 64 350"/><path d="M154 78 172 124 234 190 224 249"/><path d="M260 306 216 331 160 340 80 345"/>
+          </g>
+          <g fill="#FFB21A">
+            <circle cx="61" cy="175" r="3"/><circle cx="195" cy="243" r="3"/><circle cx="136" cy="172" r="3"/><circle cx="68" cy="116" r="3"/><circle cx="110" cy="171" r="3"/><circle cx="220" cy="222" r="3"/>
+          </g>
+          <circle cx="246" cy="308" r="5" fill="#FF5A3C"/><circle class="pulse" cx="246" cy="308" r="5" fill="none" stroke="#FF5A3C" stroke-width="2"/>
+          <circle cx="238" cy="91" r="5" fill="#FF5A3C"/><circle class="pulse" cx="238" cy="91" r="5" fill="none" stroke="#FF5A3C" stroke-width="2" style="animation-delay:1s"/>
+        </svg>
+        <div class="va-count tab">284<small>지금 진행 중인 돌발상황</small></div>
+      </div>
+      <div class="va-side">
+        <h4>방금 들어온 상황</h4>
+        <div class="va-item"><div class="t tab">22:54</div><div><div class="r">영동선 강풍주의</div><div class="m">종점방향 · 재난</div></div></div>
+        <div class="va-item"><div class="t tab">22:41</div><div><div class="r">서해안선 고장차 처리중</div><div class="m">갓길 · 종점방향</div></div></div>
+        <div class="va-item"><div class="t tab">22:29</div><div><div class="r">경부선 중형화물 고장</div><div class="m">갓길 · 종점방향</div></div></div>
+        <div class="va-item"><div class="t tab">22:19</div><div><div class="r">남해선 승용차 고장</div><div class="m">갓길 · 종점방향</div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <h3>A. 도로 전광판</h3>
+    <p>실제 고속도로 전광판(VMS)의 LED 점 질감을 상단에 크게 씁니다. 새 돌발상황이 WebSocket으로 들어오면 전광판 문구가 바뀌어서 "실시간"이 한눈에 보여요. 강렬하고 개성이 가장 뚜렷한 대신, 정보 밀도는 낮은 편이에요.</p>
+  </div>
+</div>
+
+<!-- ─────────── B ─────────── -->
+<div class="card" data-choice="b-diagram" onclick="toggleSelect(this)">
+  <div class="card-image">
+    <div class="frame vb">
+      <div class="vb-map">
+        <div class="vb-head"><h3>전국 고속도로 상황</h3><p>23:04 기준 · 돌발 284건</p></div>
+        <svg viewBox="0 0 560 440" style="width:100%;height:100%">
+          <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="9">
+            <path d="M180 120 L180 220 L260 300 L360 300 L430 370" stroke="#2456A6"/>
+            <path d="M180 120 L300 120 L420 60" stroke="#00704A"/>
+            <path d="M140 140 L140 380 L170 410" stroke="#7A4FB5"/>
+            <path d="M330 80 L330 180 L400 250 L400 300 L430 370" stroke="#D9832B"/>
+            <path d="M430 370 L360 410 L170 410" stroke="#3B9C9C"/>
+            <path d="M180 220 L330 180" stroke="#8A9A93"/>
+          </g>
+          <g fill="#fff" stroke="#1D2A25" stroke-width="3">
+            <circle cx="180" cy="120" r="9"/><circle cx="180" cy="220" r="7"/><circle cx="260" cy="300" r="7"/><circle cx="430" cy="370" r="9"/><circle cx="420" cy="60" r="7"/><circle cx="330" cy="180" r="7"/><circle cx="400" cy="300" r="7"/>
+          </g>
+          <g font-family="Gothic A1" font-weight="700" font-size="13" fill="#1D2A25">
+            <text x="196" y="116">서울</text><text x="196" y="226">천안</text><text x="232" y="324">대전</text><text x="444" y="374">부산</text><text x="434" y="64">강릉</text><text x="346" y="176">원주</text><text x="414" y="304">대구</text>
+          </g>
+          <g>
+            <circle cx="300" cy="120" r="11" fill="#E2231A"/><text x="300" y="125" text-anchor="middle" fill="#fff" font-family="Gothic A1" font-weight="900" font-size="13">!</text>
+            <circle class="pulse" cx="300" cy="120" r="11" fill="none" stroke="#E2231A" stroke-width="3"/>
+            <circle cx="140" cy="250" r="9" fill="#F2B705" stroke="#1D2A25" stroke-width="2"/>
+            <circle cx="220" cy="260" r="9" fill="#F2B705" stroke="#1D2A25" stroke-width="2"/>
+            <circle cx="400" cy="275" r="9" fill="#F2B705" stroke="#1D2A25" stroke-width="2"/>
+          </g>
+        </svg>
+      </div>
+      <div class="vb-feed">
+        <h4>지금 막힌 곳</h4>
+        <div class="vb-row"><div class="shield">50</div><div><div class="r">영동선 · 강릉 방향</div><div class="m">강풍 주의</div></div><div class="t tab">22:54</div></div>
+        <div class="vb-row"><div class="shield">15</div><div><div class="r">서해안선 · 목포 방향</div><div class="m">갓길 고장차 처리 중</div></div><div class="t tab">22:41</div></div>
+        <div class="vb-row"><div class="shield">1</div><div><div class="r">경부선 · 부산 방향</div><div class="m">중형화물 고장</div></div><div class="t tab">22:29</div></div>
+        <div class="vb-row"><div class="shield">55</div><div><div class="r">중앙선 · 부산 방향</div><div class="m">갓길 화물차 고장</div></div><div class="t tab">20:44</div></div>
+        <div class="vb-row"><div class="shield">35</div><div><div class="r">중부선 · 통영 방향</div><div class="m">갓길 석재류 낙하물</div></div><div class="t tab">21:28</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <h3>B. 고속도로 노선도</h3>
+    <p>실제 지도 대신 지하철 노선도처럼 단순화한 고속도로 도식을 씁니다. 고속도로 표지판의 초록색과 노선 번호 방패를 그대로 가져왔어요. 밝은 테마라 관제 화면 중에선 드물고, 깔끔하고 읽기 쉬워요. 다만 노선도 도식을 직접 그려야 해서 손이 가장 많이 갑니다.</p>
+  </div>
+</div>
+
+<!-- ─────────── C ─────────── -->
+<div class="card" data-choice="c-night" onclick="toggleSelect(this)">
+  <div class="card-image">
+    <div class="frame vc">
+      <div class="vc-l">
+        <div><div class="big tab">72<span style="font-size:22px;color:#7D8B9C"> km/h</span></div><div class="lbl">수도권 고속도로 평균 속도</div>
+          <div class="vc-bar"><div style="flex:62;background:#2BD47D"></div><div style="flex:24;background:#F5B83D"></div><div style="flex:14;background:#FF4D4F"></div></div>
+          <div class="lbl">원활 62% · 서행 24% · 정체 14%</div></div>
+        <div><div class="big tab" style="font-size:40px">7</div><div class="lbl">지난 1시간 새 돌발상황</div>
+          <svg viewBox="0 0 200 40" style="width:100%;margin-top:8px"><polyline points="0,32 25,30 50,26 75,28 100,18 125,22 150,12 175,16 200,6" fill="none" stroke="#5AA9FF" stroke-width="2"/></svg></div>
+      </div>
+      <div class="vc-map">
+        <svg viewBox="0 0 320 390" style="height:100%;margin:0 auto">
+          <defs><filter id="gl"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
+          <path d="M64 89 104 68 160 42 204 17 224 60 260 102 288 162 292 238 300 280 272 310 248 319 216 331 160 344 120 365 80 370 48 374 40 348 52 314 56 272 72 242 56 204 28 170 64 149 72 119Z" fill="#131D2A" stroke="#22324A"/>
+          <g fill="none" stroke-width="3" stroke-linecap="round" filter="url(#gl)" opacity=".9">
+            <path d="M96 106 126 208" stroke="#FF4D4F"/><path d="M126 208 224 249 260 306" stroke="#2BD47D"/><path d="M84 112 180 98" stroke="#F5B83D"/><path d="M180 98 246 89" stroke="#2BD47D"/><path d="M68 116 61 175" stroke="#F5B83D"/><path d="M61 175 56 272 64 350" stroke="#2BD47D"/><path d="M154 78 172 124 234 190 224 249" stroke="#2BD47D"/><path d="M260 306 216 331 160 340 80 345" stroke="#2BD47D"/>
+          </g>
+          <g fill="none" stroke-width="1.6" stroke-linecap="round">
+            <path d="M96 106 126 208" stroke="#FF8A8B"/><path d="M84 112 180 98" stroke="#FFD27A"/><path d="M68 116 61 175" stroke="#FFD27A"/>
+          </g>
+          <circle cx="110" cy="171" r="4" fill="#FF4D4F"/><circle class="pulse" cx="110" cy="171" r="4" fill="none" stroke="#FF4D4F" stroke-width="2"/>
+          <circle cx="238" cy="91" r="4" fill="#F5B83D"/><circle class="pulse" cx="238" cy="91" r="4" fill="none" stroke="#F5B83D" stroke-width="2" style="animation-delay:.8s"/>
+          <circle cx="61" cy="175" r="3" fill="#F5B83D"/><circle cx="246" cy="308" r="3" fill="#F5B83D"/>
+          <g font-size="9" fill="#7D8B9C" font-family="IBM Plex Sans KR"><text x="100" y="100">서울</text><text x="268" y="312">부산</text></g>
+        </svg>
+      </div>
+      <div class="vc-r">
+        <div class="cam"><i>LIVE</i><span>[경부선] 죽전휴게소(서울)</span></div>
+        <div class="vc-ev">경부선 중형화물 고장차 처리 중<small>22:29 · 종점방향 갓길 · 가까운 CCTV 2대</small></div>
+        <div class="vc-ev" style="border-color:#F5B83D">영동선 강풍 주의<small>22:54 · 재난</small></div>
+      </div>
+    </div>
+  </div>
+  <div class="card-body">
+    <h3>C. 야간 속도 지도</h3>
+    <p>실제 지형 위에 도로를 속도별 색(원활·서행·정체)으로 빛나게 그리고, 사고 지점에서 파동이 퍼집니다. 사고를 클릭하면 오른쪽에 가까운 CCTV가 바로 재생돼요. 세 기능(실시간·영상·차트)이 한 화면에 가장 잘 묶이지만, 관제 화면의 익숙한 문법이라 개성은 A·B보다 약해요.</p>
+  </div>
+</div>
+
+</div>

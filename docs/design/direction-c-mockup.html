@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>전국 도로 상황실 — 시안 C v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
+<style>
+:root{
+  --asphalt:#0C131D; --panel:#111B28; --line:#1D2A3A; --ink:#DCE4EE; --mute:#7C8A9B;
+  --flow:#2BD47D; --slow:#F5B83D; --jam:#FF4D4F; --info:#5AA9FF;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--asphalt);color:var(--ink);font-family:'IBM Plex Sans KR',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.tab{font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--info);outline-offset:2px;border-radius:4px}
+
+.app{display:grid;height:100vh;min-height:640px;grid-template-columns:270px 1fr 360px;grid-template-rows:56px 1fr 92px}
+
+/* 상단 */
+.top{grid-column:1/4;display:flex;align-items:center;gap:20px;padding:0 22px;border-bottom:1px solid var(--line)}
+.top h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
+.top .clock{margin-left:auto;font-size:15px;color:var(--mute)}
+.conn{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mute)}
+.conn .dot{width:8px;height:8px;border-radius:50%;background:var(--flow);box-shadow:0 0 0 0 rgba(43,212,125,.6)}
+.conn.hit .dot{animation:beat .9s ease-out}
+@keyframes beat{0%{box-shadow:0 0 0 0 rgba(43,212,125,.7)}100%{box-shadow:0 0 0 10px rgba(43,212,125,0)}}
+
+/* 왼쪽 */
+.left{padding:22px 20px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:28px;overflow:hidden}
+.kpi .big{font-weight:300;font-size:60px;line-height:1;color:#fff}
+.kpi .big small{font-size:20px;color:var(--mute);margin-left:4px}
+.kpi .lbl{font-size:13px;color:var(--mute);margin-top:8px}
+.dist{display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:12px;gap:2px}
+.legend{display:flex;gap:12px;font-size:12px;color:var(--mute);margin-top:8px}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:0}
+.types h3,.left h3{font-size:13px;font-weight:500;color:var(--mute);margin:0 0 12px}
+.trow{display:grid;grid-template-columns:72px 1fr 34px;align-items:center;gap:10px;font-size:13px;margin-bottom:9px}
+.trow .bar{height:6px;border-radius:3px;background:#1A2636;overflow:hidden}
+.trow .bar span{display:block;height:100%;border-radius:3px}
+.trow .n{text-align:right;color:var(--mute)}
+.count{font-weight:300;font-size:40px;color:#fff;line-height:1;transition:color .6s}
+.count.bump{color:var(--jam)}
+
+/* 지도 */
+.map{position:relative;overflow:hidden}
+.map svg{position:absolute;inset:0;width:100%;height:100%}
+.road-base{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:3.2;filter:url(#glow);opacity:.75}
+.road-flow{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:1.4;stroke-dasharray:2 9;animation:flow linear infinite}
+@keyframes flow{to{stroke-dashoffset:-110}}
+.inc{cursor:pointer}
+.inc .core{transition:r .3s}
+.inc:hover .core,.inc.sel .core{r:6}
+.ring{fill:none;stroke-width:1.6;animation:ring 2.4s ease-out infinite}
+@keyframes ring{0%{r:4;opacity:.9}100%{r:26;opacity:0}}
+.inc.fresh .ring{animation:ringBig 1.4s ease-out 3}
+@keyframes ringBig{0%{r:4;opacity:1;stroke-width:3}100%{r:46;opacity:0;stroke-width:1}}
+.city{font-size:8px;fill:var(--mute)}
+.maphint{position:absolute;left:22px;bottom:18px;font-size:12px;color:var(--mute)}
+.maphint b{color:var(--ink);font-weight:500}
+
+/* 오른쪽 */
+.right{border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.cam{position:relative;aspect-ratio:3/2;background:#060A10;flex:none}
+.cam video{width:100%;height:100%;object-fit:cover;display:block}
+.camname{font-size:14px;padding:12px 14px 0}
+.cam .live{position:absolute;right:12px;top:10px;font-size:12px;background:var(--jam);color:#fff;border-radius:4px;padding:2px 8px}
+.cam .err{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:24px;font-size:13px;color:var(--mute)}
+.cam.failed .err{display:grid}
+.chips{display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.chip{font-size:12px;padding:5px 10px;border-radius:14px;background:#162232;color:var(--mute)}
+.chip[aria-pressed=true]{background:#1F3550;color:#fff}
+.feed{flex:1;overflow:hidden;padding:6px 14px 14px;display:flex;flex-direction:column}
+.feed h3{font-size:13px;font-weight:500;color:var(--mute);margin:10px 0 8px}
+.ev{display:grid;grid-template-columns:4px 1fr auto;gap:12px;padding:11px 10px 11px 0;border-radius:6px;text-align:left;width:100%;transition:background .4s}
+.ev .k{border-radius:2px}
+.ev .t1{font-size:14px}
+.ev .t2{font-size:12px;color:var(--mute);margin-top:3px}
+.ev .tm{font-size:12px;color:var(--mute)}
+.ev:hover{background:#142030}
+.ev.new{animation:arrive .7s cubic-bezier(.2,.8,.2,1)}
+.ev.new{background:#1A2A3E}
+@keyframes arrive{from{transform:translateY(-14px);opacity:0}to{transform:none;opacity:1}}
+
+/* 타임라인 */
+.timeline{grid-column:1/4;border-top:1px solid var(--line);padding:12px 22px 0;position:relative}
+.timeline .row{display:flex;justify-content:space-between;font-size:12px;color:var(--mute)}
+.ticks{position:relative;height:38px;margin-top:8px}
+.ticks span{position:absolute;bottom:0;width:2px;border-radius:1px}
+.ticks .now{position:absolute;top:-4px;bottom:-4px;right:0;width:2px;background:#fff}
+.hours{display:flex;justify-content:space-between;font-size:11px;color:#55657A;margin-top:4px}
+
+@media (prefers-reduced-motion:reduce){.road-flow,.ring,.ev.new,.conn.hit .dot{animation:none!important}}
+@media (max-width:1100px){.app{grid-template-columns:1fr;grid-template-rows:56px 52vh auto auto 92px;height:auto}.left{order:3}.right{order:2}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>전국 도로 상황실</h1>
+    <div class="conn" id="conn"><span class="dot"></span><span id="connTxt">실시간 연결됨</span></div>
+    <div class="clock tab" id="clock">23:12:04</div>
+  </header>
+
+  <aside class="left">
+    <section class="kpi">
+      <div class="big tab">72<small>km/h</small></div>
+      <div class="lbl">수도권 고속도로 평균 속도</div>
+      <div class="dist"><span style="flex:62;background:var(--flow)"></span><span style="flex:24;background:var(--slow)"></span><span style="flex:14;background:var(--jam)"></span></div>
+      <div class="legend"><span><i style="background:var(--flow)"></i>원활 62%</span><span><i style="background:var(--slow)"></i>서행 24%</span><span><i style="background:var(--jam)"></i>정체 14%</span></div>
+    </section>
+    <section>
+      <h3>진행 중인 돌발상황</h3>
+      <div class="count tab" id="count">284</div>
+    </section>
+    <section class="types">
+      <h3>유형별</h3>
+      <div class="trow"><span>공사</span><div class="bar"><span style="width:100%;background:#4B5D74"></span></div><span class="n tab">252</span></div>
+      <div class="trow"><span>고장·낙하물</span><div class="bar"><span style="width:28%;background:var(--slow)"></span></div><span class="n tab" id="nBreak">23</span></div>
+      <div class="trow"><span>교통사고</span><div class="bar"><span style="width:6%;background:var(--jam)"></span></div><span class="n tab">7</span></div>
+      <div class="trow"><span>기상·재난</span><div class="bar"><span style="width:3%;background:var(--info)"></span></div><span class="n tab">2</span></div>
+    </section>
+  </aside>
+
+  <main class="map" aria-label="전국 고속도로 지도">
+    <svg viewBox="-10 0 340 390" preserveAspectRatio="xMidYMid meet" id="map">
+      <defs>
+        <filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.4"/></filter>
+        <radialGradient id="vign" cx="50%" cy="45%" r="60%"><stop offset="0" stop-color="#16243A" stop-opacity=".55"/><stop offset="1" stop-color="#0C131D" stop-opacity="0"/></radialGradient>
+      </defs>
+      <rect x="-10" y="0" width="340" height="390" fill="url(#vign)"/>
+      <path d="M64 89 104 68 160 42 204 17 224 60 260 102 288 162 292 238 300 280 272 310 248 319 216 331 160 344 120 365 80 370 48 374 40 348 52 314 56 272 72 242 56 204 28 170 64 149 72 119Z" fill="#101A27" stroke="#1F2F45" stroke-width=".8"/>
+      <g id="roads"></g>
+      <g class="city">
+        <text x="100" y="101">서울</text><text x="104" y="222">대전</text><text x="229" y="256">대구</text><text x="265" y="314">부산</text><text x="250" y="85">강릉</text><text x="66" y="356">목포</text>
+      </g>
+      <g id="incs"></g>
+    </svg>
+    <div class="maphint">도로의 빛이 흐르는 속도 = <b>실제 통행 속도</b> · 점을 누르면 가까운 CCTV로 바뀝니다</div>
+  </main>
+
+  <aside class="right">
+    <div class="cam" id="cam">
+      <video id="video" muted playsinline autoplay></video>
+      <span class="live">실시간</span>
+      <div class="err">영상 주소가 만료됐어요.<br>실제 서비스에서는 재생 직전에 서버가 새 주소를 받아 옵니다.</div>
+    </div>
+    <div class="camname" id="camName">[경부선] 죽전휴게소(서울)</div>
+    <div class="chips" id="chips"></div>
+    <div class="feed">
+      <h3>방금 들어온 상황</h3>
+      <div id="feed"></div>
+    </div>
+  </aside>
+
+  <footer class="timeline">
+    <div class="row"><span>지난 24시간 돌발상황</span><span>막대를 끌어 과거 상황을 다시 볼 수 있게 할 예정</span></div>
+    <div class="ticks" id="ticks"><div class="now"></div></div>
+    <div class="hours"><span>어제 23시</span><span>03시</span><span>07시</span><span>11시</span><span>15시</span><span>19시</span><span>지금</span></div>
+  </footer>
+</div>
+
+<script>
+const C={flow:'#2BD47D',slow:'#F5B83D',jam:'#FF4D4F',info:'#5AA9FF'};
+// 고속도로 구간: [경로, 속도 km/h]
+const roads=[
+  ['M96 106 L110 160',38],['M110 160 L126 208',64],['M126 208 L180 232 L224 249',96],['M224 249 L260 306',88], // 경부
+  ['M84 112 L150 102',52],['M150 102 L246 89',98],                                    // 영동
+  ['M68 116 L61 175',47],['M61 175 L56 272 L64 350',101],                              // 서해안
+  ['M154 78 L172 124 L234 190 L224 249',92],                                           // 중앙
+  ['M260 306 L216 331 L160 340 L80 345',94],                                           // 남해
+  ['M100 104 L136 172 L126 208',81],                                                   // 중부
+  ['M136 172 L195 243 L216 331',99],                                                   // 중부내륙(대략)
+];
+const col=s=>s<50?C.jam:s<70?C.slow:C.flow;
+const g=document.getElementById('roads');
+roads.forEach(([d,s])=>{
+  const b=document.createElementNS('http://www.w3.org/2000/svg','path');b.setAttribute('d',d);b.setAttribute('class','road-base');b.setAttribute('stroke',col(s));g.appendChild(b);
+  const f=b.cloneNode();f.setAttribute('class','road-flow');f.setAttribute('stroke','#fff');f.style.opacity=.75;f.style.animationDuration=(260/s).toFixed(2)+'s';g.appendChild(f);
+});
+
+const cams=[
+  {name:'[경부선] 죽전휴게소(서울)',url:'https://cctvsec.ktict.co.kr/77/vwHOPcAEW0h3Z978M7ig76uvi4Tf4pS4veh7vpdEjr+NY7E5hPMHY8V5FEuJ2x2I6bnvX3sWRQJPlpwL82h6xik4dDf/LmPpvsmMDqHV/qk='},
+  {name:'[경부선] 서초',url:'https://cctvsec.ktict.co.kr/99/0NWdKGBaVnkacJRTEz8y0oZmOm5aU/o3cZJrEkLav6l/i8FZP2UMlEwfgK3r1WGjYz5wt+3ljOD35QRUfnYU/tITK/D54U+SNoVmLYFAJKY='},
+  {name:'[수도권제1순환선] 송파',url:'https://cctvsec.ktict.co.kr/4/CuBoGIV/r49XMH6S0vjHjoFTruF9iOULzzQ/vvBgB+7yNdEM1slH93OJ7xKLwkfW0HUJ3e94TBMHFAV5L9CXYw=='},
+];
+const video=document.getElementById('video'),camEl=document.getElementById('cam');let hls,camIdx=0;
+function play(i){
+  camIdx=i;document.getElementById('camName').textContent=cams[i].name;camEl.classList.remove('failed');
+  document.querySelectorAll('.chip').forEach((c,j)=>c.setAttribute('aria-pressed',j===i));
+  if(hls){hls.destroy();hls=null}
+  if(window.Hls&&Hls.isSupported()){hls=new Hls({lowLatencyMode:true});hls.loadSource(cams[i].url);hls.attachMedia(video);
+    hls.on(Hls.Events.ERROR,(e,d)=>{if(d.fatal)camEl.classList.add('failed')});}
+  else if(video.canPlayType('application/vnd.apple.mpegurl')){video.src=cams[i].url}
+  video.play().catch(()=>{});
+}
+const chips=document.getElementById('chips');
+cams.forEach((c,i)=>{const b=document.createElement('button');b.className='chip';b.textContent=c.name.replace(/\[.*?\]\s*/,'');b.onclick=()=>play(i);chips.appendChild(b)});
+play(0);
+
+// 오늘 받은 실제 돌발상황 (좌표는 화면 좌표로 변환해 둠)
+const queue=[
+  {r:'경부선',m:'중형화물 고장차 처리 중',d:'부산 방향 갓길',t:'22:29',x:110,y:171,k:'slow',cam:0},
+  {r:'영동선',m:'강풍 주의',d:'강릉 방향',t:'22:54',x:238,y:91,k:'info',cam:2},
+  {r:'서해안선',m:'고장차 처리 중',d:'목포 방향 갓길',t:'22:41',x:61,y:175,k:'slow',cam:1},
+  {r:'남해선',m:'승용차 고장 처리 중',d:'부산 방향 갓길',t:'22:19',x:243,y:304,k:'slow',cam:0},
+  {r:'중부선',m:'석재류 낙하물 처리 중',d:'통영 방향 갓길',t:'21:28',x:137,y:172,k:'slow',cam:1},
+  {r:'남해2지선',m:'2차로 장애물 처리 중',d:'2차로 차단',t:'21:53',x:246,y:309,k:'jam',cam:2},
+  {r:'제2경인선',m:'화물차 고장 처리 중',d:'갓길',t:'19:18',x:68,y:116,k:'slow',cam:1},
+  {r:'중앙선',m:'화물차 고장 처리 중',d:'갓길',t:'20:44',x:221,y:222,k:'slow',cam:0},
+];
+const incs=document.getElementById('incs'),feed=document.getElementById('feed');
+function addInc(e,fresh){
+  const ns='http://www.w3.org/2000/svg',grp=document.createElementNS(ns,'g');grp.setAttribute('class','inc'+(fresh?' fresh':''));grp.setAttribute('tabindex','0');
+  grp.innerHTML=`<circle class="ring" cx="${e.x}" cy="${e.y}" r="4" stroke="${C[e.k]}" style="animation-delay:${Math.random()*2}s"/><circle class="core" cx="${e.x}" cy="${e.y}" r="3.6" fill="${C[e.k]}"/>`;
+  grp.onclick=()=>select(e,grp);grp.onkeydown=ev=>{if(ev.key==='Enter')select(e,grp)};
+  incs.appendChild(grp);e.node=grp;
+  const b=document.createElement('button');b.className='ev'+(fresh?' new':'');
+  b.innerHTML=`<span class="k" style="background:${C[e.k]}"></span><span><div class="t1">${e.r} ${e.m}</div><div class="t2">${e.d}</div></span><span class="tm tab">${e.t}</span>`;
+  b.onclick=()=>select(e,grp);feed.prepend(b);
+  if(fresh)setTimeout(()=>b.classList.remove('new'),2600);
+  while(feed.children.length>6)feed.lastChild.remove();
+}
+function select(e,grp){document.querySelectorAll('.inc').forEach(n=>n.classList.remove('sel'));grp.classList.add('sel');play(e.cam)}
+queue.slice(0,4).reverse().forEach(e=>addInc(e,false));
+
+// WebSocket 수신 흉내: 몇 초마다 새 상황이 '도착'
+let qi=4,count=284;const conn=document.getElementById('conn'),connTxt=document.getElementById('connTxt'),cnt=document.getElementById('count');
+setInterval(()=>{
+  const e={...queue[qi%queue.length]};qi++;
+  const d=new Date();e.t=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  addInc(e,true);count++;cnt.textContent=count;cnt.classList.add('bump');setTimeout(()=>cnt.classList.remove('bump'),1200);
+  conn.classList.remove('hit');void conn.offsetWidth;conn.classList.add('hit');connTxt.textContent='방금 새 상황 수신';
+  setTimeout(()=>connTxt.textContent='실시간 연결됨',3000);
+},8000);
+
+// 시계
+const clock=document.getElementById('clock');setInterval(()=>{clock.textContent=new Date().toLocaleTimeString('ko-KR',{hour12:false})},1000);
+
+// 24시간 타임라인 (공사는 낮게, 사고·고장은 높게)
+const ticks=document.getElementById('ticks');
+for(let i=0;i<120;i++){const s=document.createElement('span');const p=Math.pow(Math.random(),.7)*100;const k=Math.random();
+  s.style.left=p+'%';s.style.height=(k<.12?34:k<.4?20:10)+'px';s.style.background=k<.12?C.jam:k<.4?C.slow:'#3A4B61';ticks.appendChild(s)}
+</script>
+</body>
+</html>
