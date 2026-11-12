@@ -52,12 +52,31 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-test('sends resume with the last id on open', () => {
+test('puts the last id in the url at connect time and sends no resume on open', () => {
   const { statuses } = setup(() => 41);
   expect(statuses[0]).toEqual(['connecting', undefined]);
+  expect(last().url).toBe('ws://x/?lastId=41');
   last().open();
-  expect(JSON.parse(last().sent[0]!)).toEqual({ type: 'resume', lastId: 41 });
+  expect(last().sent).toEqual([]);
   expect(statuses.at(-1)![0]).toBe('open');
+});
+
+test('each reconnect reads the last id again', () => {
+  let id = 41;
+  setup(() => id);
+  id = 57;
+  last().close();
+  vi.advanceTimersByTime(1000);
+  expect(last().url).toBe('ws://x/?lastId=57');
+});
+
+test('keeps other query params and skips a negative or fractional last id', () => {
+  const client = createRealtimeClient({
+    url: 'wss://rt.example/ws?v=1', getLastId: () => -1, onMessage: () => {}, onStatus: () => {},
+    WebSocketImpl: WS, random: () => 1,
+  });
+  expect(last().url).toBe('wss://rt.example/ws?v=1');
+  client.close();
 });
 
 test('reports waking after 5s without open', () => {
@@ -128,7 +147,7 @@ test('pings every 25s and reconnects if no pong within 10s', () => {
   const ws = last();
   ws.open();
   vi.advanceTimersByTime(25000);
-  expect(ws.sent.map((s) => JSON.parse(s).type)).toEqual(['resume', 'ping']);
+  expect(ws.sent.map((s) => JSON.parse(s).type)).toEqual(['ping']);
   ws.recv(JSON.stringify({ id: 0, type: 'pong', ts: new Date().toISOString(), payload: {} }));
   vi.advanceTimersByTime(10000);
   expect(statuses.at(-1)![0]).toBe('open');

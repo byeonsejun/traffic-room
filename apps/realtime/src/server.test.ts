@@ -49,12 +49,12 @@ interface Client {
 }
 
 /** onInit 에서 듣기 시작해 연결 직후 오는 hello 도 놓치지 않는다. */
-async function connect(app: FastifyInstance, origin = ORIGIN): Promise<Client> {
+async function connect(app: FastifyInstance, origin = ORIGIN, path = '/ws'): Promise<Client> {
   const queue: ServerMessage[] = [];
   const waiters: ((m: ServerMessage) => void)[] = [];
   let onClose!: (code: number) => void;
   const closed = new Promise<number>((r) => (onClose = r));
-  const ws = await app.injectWS('/ws', { headers: { origin } }, {
+  const ws = await app.injectWS(path, { headers: { origin } }, {
     onInit(ws) {
       ws.on('message', (data) => {
         const m = parseServerMessage(String(data));
@@ -128,6 +128,48 @@ describe('websocket', () => {
     expect([m2.id, m3.id]).toEqual([2, 3]);
     expect(m2).toMatchObject({ type: 'incident.arrived', payload: { incident: { key: 'b' } } });
     expect(m3).toMatchObject({ type: 'incident.arrived', payload: { incident: { key: 'c' } } });
+  });
+
+  test('resume answers at most 200 events', async () => {
+    const { app, db } = await setup();
+    const base = NOW.getTime() - 5 * 60 * 60_000;
+    await applyIncidentPlan(db, {
+      quiet: [], seen: [], cleared: [],
+      arriving: Array.from({ length: 250 }, (_, i) => ({ incident: inc(`k${i}`), emitAt: new Date(base + i * 1000) })),
+    }, new Date(base - 60 * 60_000));
+    const c = await connect(app);
+    await c.next(); // hello
+    c.send({ type: 'resume', lastId: 0 });
+    c.send({ type: 'ping' });
+    const ids: number[] = [];
+    for (;;) {
+      const m = await c.next();
+      if (m.type === 'pong') break;
+      ids.push(m.id);
+    }
+    expect(ids).toHaveLength(200);
+    expect(ids[0]).toBe(1);
+    expect(ids.at(-1)).toBe(200);
+  });
+
+  test('lastId in the url is resumed before any broadcast, without a resume message', async () => {
+    const { app, db, hub } = await setup();
+    await seedThreeEvents(db);
+    const c = await connect(app, ORIGIN, '/ws?lastId=1');
+    // 클라이언트가 아무 말도 하기 전에 브로드캐스트가 먼저 나간다.
+    hub.broadcast({ id: 9, kind: 'arrived', emitAt: NOW.toISOString(), incident: inc('z') });
+    const got = [await c.next(), await c.next(), await c.next(), await c.next()];
+    expect(got.map((m) => m.type)).toEqual(['hello', 'incident.arrived', 'incident.arrived', 'incident.arrived']);
+    expect(got.map((m) => m.id)).toEqual([0, 2, 3, 9]);
+  });
+
+  test.each(['abc', '-1', '1.5', ''])('ignores an invalid lastId in the url (%s)', async (bad) => {
+    const { app, db, hub } = await setup();
+    await seedThreeEvents(db);
+    const c = await connect(app, ORIGIN, `/ws?lastId=${bad}`);
+    hub.broadcast({ id: 9, kind: 'arrived', emitAt: NOW.toISOString(), incident: inc('z') });
+    expect((await c.next()).type).toBe('hello');
+    expect((await c.next()).id).toBe(9);
   });
 
   test('responds pong to ping', async () => {

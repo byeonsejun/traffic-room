@@ -18,6 +18,17 @@ const BACKOFF_BASE_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
 const WS_OPEN = 1;
 
+/**
+ * 접속 주소에 lastId 를 붙인다. 서버는 hello 바로 뒤에 그 뒤의 이벤트를 보내 주므로, 접속 뒤에
+ * resume 을 따로 보내는 왕복 사이에 브로드캐스트가 앞지르는 일이 없다.
+ */
+function withLastId(url: string, lastId: number): string {
+  if (!Number.isSafeInteger(lastId) || lastId < 0) return url;
+  const u = new URL(url);
+  u.searchParams.set('lastId', String(lastId));
+  return u.toString();
+}
+
 export function createRealtimeClient(opts: RealtimeClientOptions) {
   const WS = opts.WebSocketImpl ?? WebSocket;
   const random = opts.random ?? Math.random;
@@ -57,7 +68,7 @@ export function createRealtimeClient(opts: RealtimeClientOptions) {
     if (closed) return;
     clearTimers();
     opts.onStatus('connecting');
-    const socket = new WS(opts.url);
+    const socket = new WS(withLastId(opts.url, opts.getLastId()));
     ws = socket;
     wakingTimer = setTimeout(() => {
       if (ws === socket && !closed) opts.onStatus('waking');
@@ -67,7 +78,6 @@ export function createRealtimeClient(opts: RealtimeClientOptions) {
       if (ws !== socket) return;
       clearTimeout(wakingTimer);
       opts.onStatus('open');
-      send({ type: 'resume', lastId: opts.getLastId() });
       pingTimer = setInterval(() => {
         send({ type: 'ping' });
         clearTimeout(pongTimer);
