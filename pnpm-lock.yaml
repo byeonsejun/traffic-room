@@ -176,6 +176,18 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0(@types/node@26.6.6)(vite@8.3.7(@types/node@26.6.6))
 
+  apps/collector:
+    dependencies:
+      '@traffic-room/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@traffic-room/its':
+        specifier: workspace:*
+        version: link:../../packages/its
+      '@traffic-room/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+
   packages/db:
     dependencies:
       '@electric-sql/pglite':

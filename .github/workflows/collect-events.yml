@@ -1,0 +1,44 @@
+name: collect-events
+on:
+  schedule:
+    - cron: '5 * * * *'
+  workflow_dispatch:
+
+# 같은 워크플로가 겹쳐 돌아 DB 쓰기가 경합하지 않도록 한 번에 하나만 실행한다.
+concurrency:
+  group: collect-events
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @traffic-room/collector events
+        env:
+          ITS_MODE: live
+          ITS_API_KEY: ${{ secrets.ITS_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  # 저장소에 60일간 활동이 없으면 예약 실행이 멈춘다. 커밋 없이 API로 워크플로를 다시 활성화해 막는다.
+  keepalive:
+    needs: collect
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - run: gh workflow enable collect-events.yml --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}

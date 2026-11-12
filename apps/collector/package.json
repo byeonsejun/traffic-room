@@ -1,0 +1,16 @@
+{
+  "name": "@traffic-room/collector",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "events": "node src/run-events.ts",
+    "cctvs": "node src/run-cctvs.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@traffic-room/db": "workspace:*",
+    "@traffic-room/its": "workspace:*",
+    "@traffic-room/shared": "workspace:*"
+  }
+}

@@ -11,8 +11,10 @@ export interface ItsClient {
 
 /** 메시지에는 키나 키가 든 URL 을 담지 않는다. */
 export class ItsError extends Error {
-  constructor(public code: string, message: string) {
+  readonly code: string;
+  constructor(code: string, message: string) {
     super(message);
+    this.code = code;
     this.name = 'ItsError';
   }
 }
