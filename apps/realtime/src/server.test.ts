@@ -78,6 +78,27 @@ async function connect(app: FastifyInstance, origin = ORIGIN): Promise<Client> {
   };
 }
 
+/** 문구에 needle 이 든 첫 쿼리를 open() 전까지 붙잡아 두는 Db (Neon 콜드 스타트 흉내). */
+function gated(db: Db, needle: string) {
+  let open!: () => void;
+  const opened = new Promise<void>((r) => (open = r));
+  let reach!: () => void;
+  const reached = new Promise<void>((r) => (reach = r));
+  let held = false;
+  const wrapped: Db = {
+    async query<T>(text: string, params?: unknown[]) {
+      if (!held && text.includes(needle)) {
+        held = true;
+        reach();
+        await opened;
+      }
+      return db.query<T>(text, params);
+    },
+    batch: (s) => db.batch(s),
+  };
+  return { db: wrapped, open, reached };
+}
+
 /** 지금보다 이전 송출 시각의 로그 3건(id 1,2,3)을 만든다. */
 async function seedThreeEvents(db: Db) {
   const base = NOW.getTime() - 3 * 60 * 60_000;
@@ -183,6 +204,34 @@ describe('websocket', () => {
     expect((await getCctv(db, 'c1'))?.url).toBe(fresh.url);
     const runs = await db.query<{ ok: boolean; count: number }>("select ok, count from collector_runs where service = 'cctv'");
     expect(runs).toEqual([{ ok: true, count: 2 }]);
+  });
+
+  test('a broadcast during a slow resume arrives after the resumed events', async () => {
+    const real = await createTestDb();
+    await seedThreeEvents(real);
+    const gate = gated(real, 'l.id > $1'); // getEventsAfter
+    const { app, hub } = await setup({ db: gate.db });
+    const c = await connect(app);
+    expect((await c.next()).type).toBe('hello');
+    c.send({ type: 'resume', lastId: 1 });
+    await gate.reached;
+    hub.broadcast({ id: 9, kind: 'cleared', emitAt: NOW.toISOString(), incident: inc('z') });
+    gate.open();
+    const ids = [(await c.next()).id, (await c.next()).id, (await c.next()).id];
+    expect(ids).toEqual([2, 3, 9]);
+  });
+
+  test('a broadcast during a slow hello arrives after hello', async () => {
+    const real = await createTestDb();
+    const gate = gated(real, 'max(id)'); // latestEmittedId
+    const { app, hub } = await setup({ db: gate.db });
+    const pending = connect(app);
+    await gate.reached;
+    hub.broadcast({ id: 9, kind: 'arrived', emitAt: NOW.toISOString(), incident: inc('z') });
+    gate.open();
+    const c = await pending;
+    expect((await c.next()).type).toBe('hello');
+    expect(await c.next()).toMatchObject({ id: 9, type: 'incident.arrived' });
   });
 
   test('broadcast reaches every connected client', async () => {

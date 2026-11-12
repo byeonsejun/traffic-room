@@ -61,7 +61,8 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     };
     touch();
 
-    // hello 가 늘 첫 메시지가 되도록, 그리고 resume 응답이 섞이지 않도록 한 줄로 처리한다.
+    // hello · resume 응답 · 브로드캐스트를 모두 한 줄로 보낸다. hello 가 늘 첫 메시지이고,
+    // resume 이 DB 를 기다리는 동안 온 브로드캐스트는 그 응답 뒤에 나간다(겹치면 중복일 뿐 빈틈은 없다).
     let chain: Promise<void> = Promise.resolve();
     const enqueue = (job: () => Promise<void>) => {
       chain = chain.then(job).catch((e) => req.log.warn(`ws 처리 실패 code=${errorCode(e)}`));
@@ -73,14 +74,16 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
       if (!msg) return; // 잘못된 메시지는 무시하고 연결은 유지한다
       enqueue(() => handle(msg, send));
     });
-    socket.on('close', () => clearTimeout(idle));
-
-    hub.add(socket);
     enqueue(async () => {
       send({
         id: 0, type: 'hello', ts: now().toISOString(),
         payload: { delayMinutes: DELAY_MINUTES, latestId: await latestEmittedId(db, now()) },
       });
+    });
+    const leave = hub.add({ push: (m) => enqueue(async () => send(m)) });
+    socket.on('close', () => {
+      clearTimeout(idle);
+      leave();
     });
   });
 
