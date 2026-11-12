@@ -43,23 +43,38 @@ ITS(`openapi.its.go.kr:9443`)는 클라우드와 데이터센터 IP의 접속을
 
 ### 설치
 
-1. `~/.its-api.env`에 `ITS_API_KEY=...` 한 줄을 두고, 저장소 `.env`에 `DATABASE_URL`이 있는지 확인한다.
-2. 먼저 점검만 한다. 경로와 환경 파일을 확인하고 어떤 작업이 돌지 보여 줄 뿐, 수집은 하지 않는다.
+실제로 처음 등록했을 때 저장소가 `~/Desktop` 아래에 있어서 launchd가 띄운 bash가 스크립트를 읽지 못했다("Operation not permitted"). 바탕화면·문서·다운로드는 macOS가 따로 보호하는 폴더라서다. bash에 전체 디스크 접근 권한을 주는 대신, 수집 전용 복사본을 보호 폴더 밖에 두고 그 복사본을 돌린다.
+
+1. 수집 전용 복사본을 만들고 수집기 의존성만 설치한다.
 
    ```sh
-   scripts/collect-local.sh --dry-run
+   APP="$HOME/Library/Application Support/traffic-room/app"
+   git clone https://github.com/byeonsejun/traffic-room.git "$APP"
+   cd "$APP" && pnpm install --frozen-lockfile --filter "@traffic-room/collector..."
    ```
 
-3. 템플릿의 자리표시자를 바꿔 LaunchAgents에 둔다.
+2. `~/.its-api.env`에 `ITS_API_KEY=...` 한 줄을 두고, 복사본에 `.env`(`DATABASE_URL`)를 권한 600으로 둔다.
 
    ```sh
-   sed -e "s#__REPO__#$PWD#g" -e "s#__HOME__#$HOME#g" \
-     scripts/launchd/com.traffic-room.collector.plist \
+   install -m 600 <작업 저장소>/.env "$APP/.env"
+   ```
+
+3. 먼저 점검만 한다. 경로와 환경 파일을 확인하고 어떤 작업이 돌지 보여 줄 뿐, 수집은 하지 않는다.
+
+   ```sh
+   "$APP/scripts/collect-local.sh" --dry-run
+   ```
+
+4. 템플릿의 자리표시자를 복사본 경로로 바꿔 LaunchAgents에 두고 등록한다.
+
+   ```sh
+   sed -e "s#__REPO__#$APP#g" -e "s#__HOME__#$HOME#g" \
+     "$APP/scripts/launchd/com.traffic-room.collector.plist" \
      > ~/Library/LaunchAgents/com.traffic-room.collector.plist
    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.traffic-room.collector.plist
    ```
 
-4. 등록과 마지막 실행 결과를 본다. 바로 돌려 보려면 `kickstart`를 쓴다.
+5. 등록과 마지막 실행 결과를 본다. 바로 돌려 보려면 `kickstart`를 쓴다.
 
    ```sh
    launchctl print gui/$(id -u)/com.traffic-room.collector
@@ -67,7 +82,7 @@ ITS(`openapi.its.go.kr:9443`)는 클라우드와 데이터센터 IP의 접속을
    tail ~/Library/Logs/traffic-room-collector.log
    ```
 
-저장소가 `~/Desktop` 아래에 있으면 macOS가 launchd가 띄운 bash의 읽기를 막을 수 있다(파일 및 폴더 또는 전체 디스크 접근 권한). 처음 `launchctl kickstart`를 한 뒤 로그를 확인하고, "Operation not permitted"가 보이면 `/bin/bash`에 접근 권한을 주거나 저장소를 Desktop 밖으로 옮긴다.
+수집 코드를 고친 뒤에는 복사본도 갱신해야 한다: `cd "$APP" && git pull --ff-only && pnpm install --frozen-lockfile --filter "@traffic-room/collector..."`.
 
 같은 시각에 두 번 도는 것은 스크립트가 막는다. 잠금 디렉터리(`~/Library/Application Support/traffic-room/collect.lock`)가 잡혀 있으면 `SKIP locked`, 직전 성공이 10분 안이면(CCTV 목록은 같은 8시간 구간이면) `SKIP recent`로 기록하고 넘어간다. `--cctvs`는 CCTV 목록 기록을, `--force`는 두 기록을 무시한다. 30분 넘은 잠금은 낡은 것으로 보고 넘겨받는다.
 
