@@ -3,15 +3,16 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { Cctv, Incident } from '@traffic-room/shared';
 import { useConsole } from '@/store/console';
 
-type Inst = { handlers: Record<string, (...a: unknown[]) => void>; loaded: string[]; destroyed: boolean; recovered: number };
+type Inst = { handlers: Record<string, (...a: unknown[]) => void>; loaded: string[]; destroyed: boolean; recovered: number; swapped: number };
 const hlsState = vi.hoisted(() => ({ instances: [] as Inst[] }));
 vi.mock('hls.js', () => {
   class FakeHls {
     static isSupported() { return true; }
     static Events = { ERROR: 'hlsError', MANIFEST_PARSED: 'hlsManifestParsed' };
     static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' };
-    inst: Inst = { handlers: {}, loaded: [], destroyed: false, recovered: 0 };
+    inst: Inst = { handlers: {}, loaded: [], destroyed: false, recovered: 0, swapped: 0 };
     recoverMediaError() { this.inst.recovered += 1; }
+    swapAudioCodec() { this.inst.swapped += 1; }
     constructor() { hlsState.instances.push(this.inst); }
     on(ev: string, fn: (...a: unknown[]) => void) { this.inst.handlers[ev] = fn; }
     loadSource(u: string) { this.inst.loaded.push(u); }
@@ -209,7 +210,7 @@ test('the badge says 연결 안 됨 instead of 실시간 when the video cannot p
   expect(badge.classList.contains('is-down')).toBe(true);
 });
 
-test('a fatal media error is first recovered in place; only a second one asks for a new url', async () => {
+test('fatal media errors: recover in place, then swap the audio codec, and only then ask for a new url', async () => {
   const send = vi.fn();
   render(<CctvPanel cctvs={cams} send={send} />);
   await ready(1);
@@ -217,6 +218,44 @@ test('a fatal media error is first recovered in place; only a second one asks fo
   expect(live()!.recovered).toBe(1);
   expect(send).not.toHaveBeenCalled();
   act(() => mediaFatal());
-  expect(live()!.recovered).toBe(1);
+  expect(live()!.swapped).toBe(1);
+  expect(live()!.recovered).toBe(2);
+  expect(send).not.toHaveBeenCalled();
+  act(() => mediaFatal());
+  expect(live()!.recovered).toBe(2);
   expect(send).toHaveBeenCalledTimes(1);
+});
+
+test('a media error long after the last recovery is recovered in place again', async () => {
+  const send = vi.fn();
+  let now = 1_000_000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  const { container } = render(<CctvPanel cctvs={cams} send={send} />);
+  await ready(1);
+  act(() => mediaFatal());
+  act(() => { container.querySelector('video')!.dispatchEvent(new Event('playing')); });
+  now += 60_000;
+  act(() => mediaFatal());
+  expect(live()!.recovered).toBe(2);
+  expect(live()!.swapped).toBe(0);
+  expect(send).not.toHaveBeenCalled();
+  vi.restoreAllMocks();
+});
+
+test('if playback does not resume within 10s of a recovery, it counts as a failure', async () => {
+  const send = vi.fn();
+  render(<CctvPanel cctvs={cams} send={send} />);
+  await ready(1);
+  vi.useFakeTimers();
+  act(() => mediaFatal());
+  act(() => { vi.advanceTimersByTime(9_999); });
+  expect(send).not.toHaveBeenCalled();
+  act(() => { vi.advanceTimersByTime(1); });
+  expect(send).toHaveBeenCalledTimes(1);
+});
+
+test('with no CCTV at all the panel does not claim a broken connection', () => {
+  const { container } = render(<CctvPanel cctvs={[]} send={vi.fn()} />);
+  expect(container.querySelector('.live')!.textContent).toBe('실시간');
+  expect(screen.getByRole('status').textContent).toBe('');
 });

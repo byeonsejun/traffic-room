@@ -32,3 +32,8 @@ test('ordinary messages are left as they were', () => {
   expect(incidentTitle({ ...base, roadName: '중부선', message: '(갓길)대형화물차 고장처리중' })).toBe('중부선 (갓길)대형화물차 고장처리중');
   expect(incidentTitle({ ...base, roadName: '경부선', message: '서울 서울 방향 사고' })).toBe('경부선 서울 서울 방향 사고');
 });
+
+test('a part repeated further along is dropped too', () => {
+  expect(incidentTitle({ ...base, roadName: '올림픽대로', message: '올림픽대로::구반포지하차도::1차로::구반포지하차도::[공사] 보수' }))
+    .toBe('올림픽대로 구반포지하차도 · 1차로 · [공사] 보수');
+});

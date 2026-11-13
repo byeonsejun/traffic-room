@@ -7,6 +7,8 @@ import { useActiveCctv } from './useActiveCctv';
 
 const GUIDE = '이 CCTV 영상을 지금 불러올 수 없어요. 다른 CCTV를 골라 보세요.';
 const REFRESH_WAIT_MS = 10_000;
+// 미디어 오류 복구 뒤 이만큼 지나 또 나면 새 오류로 보고 처음부터 복구한다(hls.js 권장).
+const RECOVER_WINDOW_MS = 3_000;
 const HLS_TYPE = 'application/vnd.apple.mpegurl';
 
 const chipLabel = (name: string) => name.replace(/\[.*?\]\s*/, '');
@@ -58,7 +60,12 @@ export function CctvPanel({ cctvs, send }: { cctvs: Cctv[]; send: (m: ClientMess
         setFailedKey(key);
       }
     };
-    const onPlaying = () => asked.current.delete(activeId);
+    // 복구 뒤 영상이 다시 흐르지 않고 멈춰 있으면(오류도 안 나면) 실패로 본다. 멈춘 화면 위에 "실시간"을 두지 않게.
+    let recoverTimer: ReturnType<typeof setTimeout> | undefined;
+    const onPlaying = () => {
+      asked.current.delete(activeId);
+      clearTimeout(recoverTimer);
+    };
     video.addEventListener('playing', onPlaying);
 
     (async () => {
@@ -67,15 +74,29 @@ export function CctvPanel({ cctvs, send }: { cctvs: Cctv[]; send: (m: ClientMess
       if (Hls.isSupported()) {
         const h = new Hls({ lowLatencyMode: true });
         hls = h;
-        // 미디어 오류(디코딩 등)는 주소를 새로 받지 않고 그 자리에서 한 번 되살려 본다(hls.js 권장 순서). 또 나면 아래로.
-        let recovered = false;
+        // 미디어 오류(디코딩 등)는 주소를 새로 받기 전에 그 자리에서 되살려 본다(hls.js 권장 순서):
+        // 먼저 recoverMediaError, 곧바로 또 나면 오디오 코덱을 바꿔 한 번 더, 그래도 나면 아래 onFatal 로.
+        let lastRecover = -Infinity;
+        let swapped = false;
         h.on(Hls.Events.ERROR, (_ev: unknown, data: { fatal?: boolean; type?: string }) => {
           if (!data?.fatal) return;
-          if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !recovered) {
-            recovered = true;
-            h.recoverMediaError();
-            return;
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            const now = Date.now();
+            const fresh = now - lastRecover > RECOVER_WINDOW_MS;
+            if (fresh || !swapped) {
+              if (fresh) swapped = false;
+              else {
+                h.swapAudioCodec();
+                swapped = true;
+              }
+              lastRecover = now;
+              h.recoverMediaError();
+              clearTimeout(recoverTimer);
+              recoverTimer = setTimeout(onFatal, REFRESH_WAIT_MS);
+              return;
+            }
           }
+          clearTimeout(recoverTimer);
           onFatal();
         });
         h.loadSource(url);
@@ -93,6 +114,7 @@ export function CctvPanel({ cctvs, send }: { cctvs: Cctv[]; send: (m: ClientMess
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      clearTimeout(recoverTimer);
       pending.current = null;
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('error', onFatal);
@@ -133,7 +155,8 @@ export function CctvPanel({ cctvs, send }: { cctvs: Cctv[]; send: (m: ClientMess
     }
   }, []);
   const big = native || overlay;
-  const down = !url || failed;
+  // 고른 CCTV 가 없으면(목록이 비었을 때) 끊겼다고 하지 않는다.
+  const down = !!activeId && (!url || failed);
 
   return (
     <div ref={rootRef} className={`cctv-panel${overlay ? ' is-overlay' : ''}`}>

@@ -69,17 +69,22 @@ fail() { log "FAIL $*"; echo "$*" >&2; exit 1; }
 
 # 실패한 작업의 한 줄 요약. 수집기는 실패할 때 "<작업> failed code=…" 같은 줄을 찍는데,
 # 그 뒤에 pnpm 이 "ELIFECYCLE Command failed …" 를 붙여서 마지막 줄만 보면 원인이 빠진다.
-# 그래서 작업 이름으로 시작하는 마지막 줄을 고르고, 없으면 pnpm 줄을 뺀 마지막 줄을 쓴다.
+# 그래서 작업 이름으로 시작하는 마지막 줄을 고르고, 없으면(Node 가 그냥 죽은 경우) 마지막 "…Error:" 줄,
+# 그것도 없으면 pnpm · Node 버전 · 스택 줄을 뺀 마지막 줄을 쓴다.
 fail_summary() {
   local job="$1" out="$2" line
   line="$(printf '%s\n' "$out" | grep -E "^${job} " | tail -n 1 || true)"
   if [ -z "$line" ]; then
-    line="$(printf '%s\n' "$out" | grep -vE '^[[:space:]]*$|ELIFECYCLE|ERR_PNPM|^> ' | tail -n 1 || true)"
+    line="$(printf '%s\n' "$out" | grep -E '^[A-Za-z]*Error( \[[^]]*\])?:' | tail -n 1 || true)"
+  fi
+  if [ -z "$line" ]; then
+    line="$(printf '%s\n' "$out" | grep -vE '^[[:space:]]*$|ELIFECYCLE|ERR_PNPM|^> |^Node\.js v|^[[:space:]]+at ' | tail -n 1 || true)"
   fi
   printf '%s' "${line:-출력 없음}"
 }
 
-# 실패한 작업의 출력 뒤쪽 40줄을 따로 남긴다(가려서). 파일은 FAIL_LOG_MAX_LINES 줄을 넘지 않게 자른다.
+# 실패한 작업의 출력 뒤쪽 40줄을 따로 남긴다(가려서). 파일은 FAIL_LOG_MAX_LINES 줄을 넘지 않게,
+# 기록 머리줄(=== …)에서 시작하도록 자른다. 진단용이라 실패해도 수집을 멈추지 않는다(부르는 쪽에서 || true).
 keep_fail_output() {
   local job="$1" out="$2"
   mkdir -p "$(dirname "$FAIL_LOG")"
@@ -89,7 +94,7 @@ keep_fail_output() {
     printf '\n'
   } >> "$FAIL_LOG"
   if [ "$(wc -l < "$FAIL_LOG")" -gt "$FAIL_LOG_MAX_LINES" ]; then
-    tail -n "$FAIL_LOG_MAX_LINES" "$FAIL_LOG" > "$FAIL_LOG.tmp" && mv "$FAIL_LOG.tmp" "$FAIL_LOG"
+    tail -n "$FAIL_LOG_MAX_LINES" "$FAIL_LOG" | awk 'f || /^=== /{f=1; print}' > "$FAIL_LOG.tmp" && mv "$FAIL_LOG.tmp" "$FAIL_LOG"
   fi
 }
 
@@ -201,7 +206,7 @@ for job in "${RUN_JOBS[@]}"; do
   else
     STATUS=1
     log "FAIL $job: $(fail_summary "$job" "$out")"
-    keep_fail_output "$job" "$out"
+    keep_fail_output "$job" "$out" 2>/dev/null || true
   fi
 done
 exit "$STATUS"

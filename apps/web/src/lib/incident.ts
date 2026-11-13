@@ -5,21 +5,21 @@ export const tidy = (s: string) => s.replace(/\*+/g, '').replace(/\s+/g, ' ').tr
 
 /** 같은 문장이 공백 하나를 사이에 두고 통째로 두 번 나오면 한 번만 둔다(원본 ITS 문구에 실제로 있다). */
 function once(s: string): string {
-  const mid = s.length / 2;
-  if (!Number.isInteger(mid - 0.5)) return s;
-  const a = s.slice(0, mid - 0.5);
-  return s[mid - 0.5] === ' ' && a === s.slice(mid + 0.5) ? a : s;
+  const h = (s.length - 1) / 2;
+  return Number.isInteger(h) && s[h] === ' ' && s.slice(0, h) === s.slice(h + 1) ? s.slice(0, h) : s;
 }
 
 /**
  * 상황 문구 정리. 서울시 출처 문구는 "도로명::구간::구간::차로::[공사]내용::…" 처럼 "::" 로 이어져 있어
- * 도로명과 바로 앞과 같은 조각을 빼고 " · " 로 잇는다.
+ * 도로명과 이미 나온 조각을 빼고 " · " 로 잇는다.
  */
 function describe(message: string, roadName: string): string {
   const parts = message.split('::').map((p) => once(tidy(p))).filter(Boolean);
+  const seen = new Set([roadName]);
   const kept: string[] = [];
   for (const p of parts) {
-    if (p === roadName || p === kept.at(-1)) continue;
+    if (seen.has(p)) continue;
+    seen.add(p);
     kept.push(p);
   }
   return kept.join(' · ');

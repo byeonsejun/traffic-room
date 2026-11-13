@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,16 @@ beforeEach(() => {
   // 가짜 pnpm: `pnpm --filter @traffic-room/collector <job>` 의 job 을 보고, FAKE_FAIL 과 같으면 실제 실패처럼 찍고 1 로 끝낸다.
   writeFileSync(join(bin, 'pnpm'), `#!/usr/bin/env bash
 job="\${3:-}"
+if [ "$job" = "\${FAKE_CRASH:-}" ]; then
+  echo "file:///app/src/env.ts:12" >&2
+  echo "    throw new Error('DATABASE_URL is not a postgres url');" >&2
+  echo "Error: DATABASE_URL is not a postgres url" >&2
+  echo "    at file:///app/src/env.ts:12:11" >&2
+  echo "" >&2
+  echo "Node.js v24.15.0" >&2
+  echo " ELIFECYCLE  Command failed with exit code 1."
+  exit 1
+fi
 if [ "$job" = "\${FAKE_FAIL:-}" ]; then
   echo "> @traffic-room/collector@0.0.0 $job"
   echo "connecting with $DATABASE_URL key=$ITS_API_KEY" >&2
@@ -37,7 +47,7 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-function run(fail = '') {
+function run(fail = '', crash = '') {
   try {
     execFileSync('bash', [SCRIPT, '--force'], {
       env: {
@@ -46,6 +56,7 @@ function run(fail = '') {
         TRAFFIC_ROOM_DB_ENV: join(home, 'db.env'),
         TRAFFIC_ROOM_STATE_DIR: join(home, 'state'),
         FAKE_FAIL: fail,
+        FAKE_CRASH: crash,
       },
       stdio: 'pipe',
     });
@@ -56,7 +67,7 @@ function run(fail = '') {
   const failLog = join(home, 'Library/Logs/traffic-room-collector-fail.log');
   return {
     log: existsSync(log) ? readFileSync(log, 'utf8') : '',
-    failLog: existsSync(failLog) ? readFileSync(failLog, 'utf8') : '',
+    failLog: existsSync(failLog) && statSync(failLog).isFile() ? readFileSync(failLog, 'utf8') : '',
   };
 }
 
@@ -83,4 +94,28 @@ test('the full output of a failed job is kept in a separate log, with secrets ma
   expect(failLog).not.toContain('s3cret');
   expect(failLog).not.toContain(SECRET_KEY);
   expect(failLog).toContain('postgres://***');
+});
+
+test('a crash without the collector\'s own line logs the Error line, not "Node.js v24"', () => {
+  const { log } = run('', 'events');
+  const line = log.split('\n').find((l) => l.includes('FAIL events'))!;
+  expect(line).toContain('Error: DATABASE_URL is not a postgres url');
+});
+
+test('if the failure log cannot be written, the other jobs still run', () => {
+  mkdirSync(join(home, 'Library/Logs/traffic-room-collector-fail.log'), { recursive: true });
+  const { log } = run('events');
+  expect(log).toMatch(/FAIL events/);
+  expect(log).toMatch(/OK traffic: traffic ok fake=1/);
+});
+
+test('trimming the failure log keeps whole records (it starts at a header)', () => {
+  const logs = join(home, 'Library/Logs');
+  mkdirSync(logs, { recursive: true });
+  const old = Array.from({ length: 700 }, (_, i) => `=== 2026-11-01 00:00:00 FAIL events\nline a ${i}\nline b ${i}`).join('\n');
+  writeFileSync(join(logs, 'traffic-room-collector-fail.log'), old + '\n');
+  const { failLog } = run('traffic');
+  expect(failLog.split('\n')[0]).toMatch(/^=== /);
+  expect(failLog.split('\n').length).toBeLessThanOrEqual(2001);
+  expect(failLog).toContain('FAIL traffic');
 });

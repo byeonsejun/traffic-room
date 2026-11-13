@@ -369,9 +369,10 @@ button.ev[aria-pressed='true'] { background: #1a2a3e; }
   position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
   padding: 24px; font-size: 13px; color: var(--mute); background: #060a10;
 }
-.cctv-panel .err:empty { display: none; }
-/* 배지는 영상을 덮는 안내 판(.err) 위에 둔다. 영상이 안 나올 때 "연결 안 됨"이 보여야 한다. */
-.cctv-panel .live { z-index: 1; }
+/* 비어 있어도 접근성 트리에는 남겨 둬야 글이 들어올 때 화면 낭독기가 읽는다. 그래서 display: none 이 아니라 화면에서만 감춘다. */
+.cctv-panel .err:empty { inset: auto; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+/* 배지와 크게 보기 버튼은 영상을 덮는 안내 판(.err) 위에 둔다. 영상이 안 나와도 "연결 안 됨"이 보이고 오버레이를 닫을 수 있게. */
+.cctv-panel .live, .cctv-panel .cam-full { z-index: 1; }
 .cctv-panel .live.is-down { background: #263445; color: var(--ink); }
 .cctv-panel .cam-full {
   position: absolute; left: 12px; bottom: 10px; font: inherit; font-size: 12px;
