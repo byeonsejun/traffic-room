@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Cctv, ClientMessage } from '@traffic-room/shared';
 import { FALLBACK, load } from '@/lib/load';
-import { createMetricsClient, sseUrlFrom } from '@/lib/metrics-client';
 import { createRealtimeClient } from '@/lib/realtime-client';
 import { isLoudArrival, needsResync, useConsole, type Snapshot } from '@/store/console';
 import { useMetrics } from '@/store/metrics';
@@ -13,12 +12,11 @@ import { MapView } from './MapView';
 import { StatsPanel } from './StatsPanel';
 import { TopBar } from './TopBar';
 import { useInsights } from './useInsights';
+import { useMetricsStream } from './useMetricsStream';
 import { useTraffic } from './useTraffic';
 
 // 비어 있으면 실시간 서버 없이 스냅샷만 보여 주고, 배지는 "수집본으로 보는 중"에 머문다.
 const REALTIME_URL = process.env.NEXT_PUBLIC_REALTIME_URL;
-// 지표 스트림은 같은 실시간 서버의 /sse/metrics. 주소가 없으면 교통은 처음 받은 것만 보여 준다.
-const SSE_URL = sseUrlFrom(REALTIME_URL);
 const SNAPSHOT_RETRY_BASE_MS = 5_000;
 const SNAPSHOT_RETRY_MAX_MS = 60_000;
 /** 스냅샷 캐시가 조금 낡아 다시 어긋나도 재동기화를 거듭하지 않게 한 번 하고 나면 이만큼 쉰다. */
@@ -35,11 +33,13 @@ export function Console() {
   const [collectedAt, setCollectedAt] = useState<string | null>(null);
   // 스냅샷이 오기 전에는 기본 지연(60분)으로 보여 준다.
   const [delayMinutes, setDelayMinutes] = useState(60);
+  // 지표 스트림 연결 하나. 끊겨도 마지막 지표와 도로 색을 그대로 둔다. 연결 상태는 WebSocket 배지가 이미 보여 준다.
+  useMetricsStream();
   const metrics = useMetrics((s) => s.metrics);
   // 처음 받기가 실패하면 지도는 바탕선만 그리고 범례가 알린다.
   const traffic = useTraffic(metrics?.trafficSnapshotId ?? null);
   // 왼쪽 평균 속도 추이. 교통 스냅샷이 바뀌면 24시간 요약도 다시 받는다.
-  const buckets = useInsights(metrics?.trafficSnapshotId ?? null);
+  const insights = useInsights(metrics?.trafficSnapshotId ?? null);
   const [notices, setNotices] = useState<Partial<Record<NoticeSource, string>>>({});
   const client = useRef<ReturnType<typeof createRealtimeClient> | null>(null);
   const send = useCallback((m: ClientMessage) => client.current?.send(m), []);
@@ -118,13 +118,6 @@ export function Console() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!SSE_URL) return;
-    // 끊겨도 마지막 지표와 도로 색을 그대로 둔다. 연결 상태는 WebSocket 배지가 이미 보여 준다.
-    const stream = createMetricsClient({ url: SSE_URL, onMetrics: useMetrics.getState().apply, onStatus: () => {} });
-    return () => stream.close();
-  }, []);
-
   const arrivalId = top && isLoudArrival(top) ? top.id : undefined;
   const trafficTiming = metrics ? { delayMinutes: metrics.delayMinutes, intervalMinutes: metrics.intervalMinutes } : undefined;
 
@@ -133,12 +126,12 @@ export function Console() {
       <TopBar
         status={status} retryInMs={retryInMs} live={!!REALTIME_URL} beat={arrivalId} collectedAt={collectedAt}
         delayMinutes={metrics?.delayMinutes ?? delayMinutes}
-        trafficDataAt={traffic.dataAt} trafficTiming={trafficTiming}
+        trafficDataAt={traffic.dataAt} trafficTiming={trafficTiming} page="console"
       />
       <aside className="left" aria-label="교통 · 돌발상황 지표">
         <StatsPanel
           arrivalId={arrivalId} collectedAt={collectedAt}
-          delayMinutes={metrics?.delayMinutes ?? delayMinutes} buckets={buckets}
+          delayMinutes={metrics?.delayMinutes ?? delayMinutes} insights={insights}
         />
       </aside>
       <main className="map">

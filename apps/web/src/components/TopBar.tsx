@@ -1,6 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
+import Link from 'next/link';
 import { delayLabel, readTiming } from '@traffic-room/shared';
 import { hhmm, hhmmss, mdhhmm } from '@/lib/time';
 import type { ConnStatus } from '@/lib/realtime-client';
@@ -63,15 +64,37 @@ type Props = {
   delayMinutes: number;
   trafficDataAt?: string | null;
   trafficTiming?: TrafficTiming;
+  /** 지금 화면. 탭에서 강조한다. */
+  page?: Page;
 };
+
+type Page = 'console' | 'insights';
+const TABS: { page: Page; href: string; label: string }[] = [
+  { page: 'console', href: '/', label: '관제' },
+  { page: 'insights', href: '/insights', label: '분석' },
+];
+
+/** 관제 · 분석 탭. 지금 화면은 aria-current 로 알리고 같은 표시로 강조한다. */
+function Tabs({ page }: { page: Page }) {
+  return (
+    <nav className="tabs" aria-label="화면">
+      {TABS.map((t) => (
+        <Link key={t.page} href={t.href} aria-current={t.page === page ? 'page' : undefined}>{t.label}</Link>
+      ))}
+    </nav>
+  );
+}
 
 // 지표가 아직 없으면 설정 기본값(지연 60 · 간격 60)으로 판단한다.
 const DEFAULT_TIMING: TrafficTiming = readTiming({});
 
-export function TopBar({ status, retryInMs, live, beat, collectedAt, delayMinutes, trafficDataAt, trafficTiming = DEFAULT_TIMING }: Props) {
+export function TopBar({
+  status, retryInMs, live, beat, collectedAt, delayMinutes, trafficDataAt, trafficTiming = DEFAULT_TIMING, page = 'console',
+}: Props) {
   return (
     <header className="top">
       <h1>전국 도로 상황실</h1>
+      <Tabs page={page} />
       <ConnectionBadge status={status} retryInMs={retryInMs} live={live} beat={beat} />
       <span className="delay">{delayLabel(delayMinutes)}</span>
       {collectedAt && <LastCollected collectedAt={collectedAt} />}

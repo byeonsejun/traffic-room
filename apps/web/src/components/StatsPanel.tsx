@@ -9,19 +9,19 @@ import { useConsole } from '@/store/console';
 import { useMetrics } from '@/store/metrics';
 import { LevelBar } from './charts/LevelBar';
 import { SpeedTrend } from './charts/SpeedTrend';
-import type { TrafficBucket } from './useInsights';
+import { HISTORY_HOURS, historyHours } from '@/lib/insights';
+import type { InsightsState } from './useInsights';
 
 const BUMP_MS = 1200;
 const ORDER = Object.keys(CATEGORY_LABEL) as Category[];
-/** 추이 차트가 채울 시간. 기록이 이보다 적으면 "기록 중 · N/24시간"으로 차 오르는 중임을 알린다. */
-const TREND_HOURS = 24;
 
-export function StatsPanel({ arrivalId, collectedAt, delayMinutes, buckets }: {
+export function StatsPanel({ arrivalId, collectedAt, delayMinutes, insights }: {
   arrivalId?: number;
   collectedAt: string | null;
   delayMinutes: number;
-  buckets: TrafficBucket[];
+  insights: InsightsState;
 }) {
+  const { buckets } = insights.data;
   const incidents = useConsole((s) => s.incidents);
   const list = useMemo(() => Object.values(incidents), [incidents]);
   // 지금 값은 SSE 지표가 먼저, 없으면 마지막 요약 기록. 둘 다 없으면 숫자를 지어내지 않는다.
@@ -61,11 +61,8 @@ export function StatsPanel({ arrivalId, collectedAt, delayMinutes, buckets }: {
         ) : (
           <p className="pending">교통 정보 준비 중</p>
         )}
-        {buckets.length > 1 ? (
-          <SpeedTrend buckets={buckets} />
-        ) : (
-          <p className="recording">기록 중 · {buckets.length}/{TREND_HOURS}시간</p>
-        )}
+        {buckets.length > 1 && <SpeedTrend buckets={buckets} />}
+        <HistoryNote insights={insights} />
       </section>
       {traffic && (
         <section className="levels" aria-labelledby="levels-title">
@@ -103,4 +100,16 @@ export function StatsPanel({ arrivalId, collectedAt, delayMinutes, buckets }: {
       </p>
     </>
   );
+}
+
+/**
+ * 기록이 24시간에 못 미치면 차 오르는 중임을 알린다. 받는 중에는 아무것도 보이지 않고,
+ * 처음 받기부터 실패했으면 0시간으로 읽히지 않게 실패를 그대로 말한다.
+ */
+function HistoryNote({ insights }: { insights: InsightsState }) {
+  if (insights.status === 'loading') return null;
+  if (insights.status === 'error') return <p className="recording is-error">기록을 불러오지 못했어요</p>;
+  const hours = historyHours(insights.data.buckets, insights.data.intervalMinutes);
+  if (hours >= HISTORY_HOURS) return null;
+  return <p className="recording">기록 중 · {hours}/{HISTORY_HOURS}시간</p>;
 }

@@ -84,3 +84,17 @@ test('no traffic time renders no traffic label', () => {
   withTraffic(null);
   expect(screen.queryByText(/교통 .* 기준/)).toBeNull();
 });
+
+test('관제 · 분석 tabs link both pages and mark the current one', () => {
+  const { getByRole, rerender } = render(<TopBar status="open" live={true} delayMinutes={60} page="console" />);
+  const nav = getByRole('navigation', { name: '화면' });
+  expect(nav).toBeTruthy();
+  expect(getByRole('link', { name: '관제' }).getAttribute('href')).toBe('/');
+  expect(getByRole('link', { name: '관제' }).getAttribute('aria-current')).toBe('page');
+  expect(getByRole('link', { name: '분석' }).getAttribute('href')).toBe('/insights');
+  expect(getByRole('link', { name: '분석' }).getAttribute('aria-current')).toBeNull();
+
+  rerender(<TopBar status="open" live={true} delayMinutes={60} page="insights" />);
+  expect(getByRole('link', { name: '분석' }).getAttribute('aria-current')).toBe('page');
+  expect(getByRole('link', { name: '관제' }).getAttribute('aria-current')).toBeNull();
+});
