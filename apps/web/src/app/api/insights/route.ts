@@ -23,7 +23,9 @@ export async function GET() {
       const body: InsightsResponse = { buckets: [], routes: [], incidentsByHour: [], delayMinutes, intervalMinutes };
       return NextResponse.json(body, { headers: OK_HEADERS });
     }
-    const insights = await getInsights(createNeonDb(url), new Date());
+    const now = new Date();
+    // 교통도 돌발처럼 지연해서 보여 준다. 아직 화면에 오지 않은 스냅샷은 요약에서도 뺀다.
+    const insights = await getInsights(createNeonDb(url), now, { trafficUntil: new Date(now.getTime() - delayMinutes * 60_000) });
     const body: InsightsResponse = { ...insights, delayMinutes, intervalMinutes };
     return NextResponse.json(body, { headers: OK_HEADERS });
   } catch (e) {

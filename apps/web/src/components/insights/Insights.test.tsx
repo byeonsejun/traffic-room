@@ -1,8 +1,23 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import type { Metrics } from '@traffic-room/shared';
+import type { MetricsClientOptions } from '@/lib/metrics-client';
 import { useMetrics } from '@/store/metrics';
 import { Insights } from './Insights';
+
+// 지표 스트림 주소는 모듈을 읽을 때 정해진다. import 보다 먼저 넣는다.
+vi.hoisted(() => {
+  process.env.NEXT_PUBLIC_REALTIME_URL = 'ws://rt.test/ws';
+});
+const streams: Array<{ opts: MetricsClientOptions; close: ReturnType<typeof vi.fn> }> = [];
+vi.mock('@/lib/metrics-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/metrics-client')>()),
+  createMetricsClient: (opts: MetricsClientOptions) => {
+    const s = { opts, close: vi.fn() };
+    streams.push(s);
+    return s;
+  },
+}));
 
 // jsdom 에는 canvas 가 없다. 차트는 받은 이름만 남긴다.
 vi.mock('../charts/EChart', () => ({
@@ -39,6 +54,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockClear();
+  streams.length = 0;
   respond = () => ok(body(9));
   useMetrics.setState(useMetrics.getInitialState(), true);
 });
@@ -107,4 +123,39 @@ test('a new traffic snapshot in the metrics refetches the 24-hour insights', asy
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
   const calls = fetchMock.mock.calls.map(([p]) => String(p));
   expect(calls).toEqual(['/api/insights', '/api/insights?id=8']);
+});
+
+test('the page opens one metrics stream and closes it on unmount', async () => {
+  const view = await mount();
+  expect(streams.map((s) => s.opts.url)).toEqual(['http://rt.test/sse/metrics']);
+  view.unmount();
+  expect(streams[0]!.close).toHaveBeenCalled();
+});
+
+test('before SSE arrives the delay label comes from /api/insights', async () => {
+  respond = () => ok({ ...body(9), delayMinutes: 20 });
+  await mount();
+  expect(document.querySelector('.top .delay')?.textContent).toBe('약 20분 지연');
+  expect(document.querySelector('.ins-head p')?.textContent).toContain('약 20분 지연');
+});
+
+test('a failed first load retries with backoff (30 s, then 60 s) until it succeeds', async () => {
+  let fail = true;
+  respond = () => (fail ? new Response('{}', { status: 503 }) : ok(body(9)));
+  await mount();
+  const calls = () => fetchMock.mock.calls.length;
+  expect(calls()).toBe(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(29_000); });
+  expect(calls()).toBe(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+  expect(calls()).toBe(2);
+  await act(async () => { await vi.advanceTimersByTimeAsync(59_000); });
+  expect(calls()).toBe(2);
+  fail = false;
+  await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+  expect(calls()).toBe(3);
+  expect(screen.getByText('기록 중 · 9/24시간')).toBeTruthy();
+  // 성공한 뒤에는 더 다시 받지 않는다.
+  await act(async () => { await vi.advanceTimersByTimeAsync(600_000); });
+  expect(calls()).toBe(3);
 });

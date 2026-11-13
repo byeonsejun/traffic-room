@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
-  HEAT_COLORS, heatmapOption, historyHours, incidentHoursOption, levelAreaOption, shortRoute, slowRoutesOption,
-  yesterdayDelta,
+  HEAT_COLORS, heatmapOption, heatRows, historyHours, incidentHoursOption, levelAreaOption, shortRoute, slotHourLabel,
+  slowRoutesOption, yesterdayDelta,
 } from './insights';
 import { chartTheme } from '@/components/charts/theme';
 
@@ -70,7 +70,8 @@ const routeSet = (n: number) => {
 
 describe('heatmapOption', () => {
   const routes = routeSet(20);
-  const o = heatmapOption(routes) as AnyOption;
+  const rows = heatRows(routes, 60);
+  const o = heatmapOption(rows) as AnyOption;
 
   test('twenty routes are cut to the twelve with the most records, slowest first', () => {
     expect(o.yAxis.data).toHaveLength(12);
@@ -79,40 +80,82 @@ describe('heatmapOption', () => {
     expect([o.yAxis].flat()).toHaveLength(1);
   });
 
-  test('one visual map in a single validated hue family ending at the flow green', () => {
+  test('one visual map in a single validated warm family, fast dim to slow #FF4D4F', () => {
     expect([o.visualMap].flat()).toHaveLength(1);
-    expect(o.visualMap.pieces.map((p: AnyOption) => p.color)).toEqual(HEAT_COLORS);
-    expect(HEAT_COLORS.at(-1)).toBe('#2bd47d');
-    expect(o.visualMap.textStyle.color).toBe(chartTheme.text);
+    expect(o.visualMap.seriesIndex).toEqual([0, 1]);
+    expect(o.visualMap.pieces.slice(0, 5).map((p: AnyOption) => p.color)).toEqual(HEAT_COLORS);
+    // 기록 없는 칸(-1)은 색 단계가 아니라 패널색 조각으로 간다
+    expect(o.visualMap.pieces[5]).toMatchObject({ lt: 0, label: '기록 없음' });
+    expect(o.series[1].data.every((d: number[]) => d[2] === -1)).toBe(true);
+    expect(o.visualMap.pieces[0].gte).toBe(85);
+    expect(HEAT_COLORS.at(-1)).toBe('#ff4d4f');
   });
 
-  test('no cell is invented: only recorded (route, hour) pairs become data', () => {
+  test('no cell is invented: only recorded (route, slot) pairs are coloured; empty slots are a separate outline series', () => {
     const shown = new Set(o.yAxis.data as string[]);
     const recorded = routes.filter((r) => shown.has(r.route.replace('고속도로', ''))).length;
     expect(o.series[0].data).toHaveLength(recorded);
-    // 11번 노선은 11시부터만 있다. 그 앞 칸은 비어 있다.
+    expect(o.series[1].name).toBe('기록 없음');
+    expect(o.series[0].data.length + o.series[1].data.length).toBe(12 * 24);
+    // 11번 노선은 11시부터만 있다. 그 앞 칸은 기록 없음 칸이다.
     const row = (o.yAxis.data as string[]).indexOf('노선11');
     const cols = (o.series[0].data as number[][]).filter((d) => d[1] === row).map((d) => d[0]);
     expect(Math.min(...cols)).toBe(11);
+    expect(o.series[1].itemStyle.borderColor).toBeDefined();
   });
 
   test('a collection gap stays an empty column instead of being closed up', () => {
     const gap = [at(0), at(1), at(4)].map((dataAt) => ({ dataAt, route: '경부고속도로', avgSpeed: 90 }));
-    const g = heatmapOption(gap) as AnyOption;
+    const g = heatmapOption(heatRows(gap, 60)) as AnyOption;
     expect(g.xAxis.data).toEqual([at(0), at(1), at(2), at(3), at(4)]);
     expect(g.series[0].data.map((d: number[]) => d[0])).toEqual([0, 1, 4]);
   });
 
-  test('the cell tooltip names the full route, the time and the speed', () => {
-    const html = o.tooltip.formatter({ value: [11, (o.yAxis.data as string[]).indexOf('노선11'), 77.4], color: '#000' });
+  test('the cell tooltip names the full route, the record time and the speed', () => {
+    const y = (o.yAxis.data as string[]).indexOf('노선11');
+    const html = o.tooltip.formatter({ seriesIndex: 0, value: [11, y, 77.4] });
     expect(html).toContain('노선11고속도로');
     expect(html).toContain('20:00'); // 11시 UTC = 20시 KST
-    expect(html).toContain('77 km/h');
+    expect(html).toContain(`${30 + 11 * 4 + 2} km/h`);
+    expect(o.tooltip.formatter({ seriesIndex: 1, value: [0, y, 0] })).toContain('기록 없음');
   });
 
   test('route names are escaped before they reach tooltip HTML', () => {
-    const bad = heatmapOption([{ dataAt: at(0), route: '<img src=x>고속도로', avgSpeed: 50 }]) as AnyOption;
-    expect(bad.tooltip.formatter({ value: [0, 0, 50] })).not.toContain('<img');
+    const bad = heatmapOption(heatRows([{ dataAt: at(0), route: '<img src=x>고속도로', avgSpeed: 50 }], 60)) as AnyOption;
+    expect(bad.tooltip.formatter({ seriesIndex: 0, value: [0, 0, 50] })).not.toContain('<img');
+  });
+});
+
+describe('time grid', () => {
+  const t = (h: number, m: number) => new Date(T0 + h * H + m * 60_000).toISOString();
+  const r = (dataAt: string, avgSpeed = 80) => ({ dataAt, route: '경부고속도로', avgSpeed });
+
+  test(':45-only records land in their own clock hour, and the tooltip shows the record time', () => {
+    const rows = heatRows([r(t(0, 45)), r(t(1, 45)), r(t(2, 45))], 60);
+    expect(rows.grid.slots.map((s) => new Date(s).toISOString())).toEqual([at(0), at(1), at(2)]);
+    expect(rows.cells.map((c) => c.x)).toEqual([0, 1, 2]);
+    const o = heatmapOption(rows) as AnyOption;
+    expect(o.tooltip.formatter({ seriesIndex: 0, value: [1, 0, 80] })).toContain('10:45'); // 01:45 UTC
+  });
+
+  test('mixed :00 and :45 in one slot keep the newer record', () => {
+    const rows = heatRows([r(t(0, 0), 50), r(t(0, 45), 90), r(t(1, 0), 70)], 60);
+    expect(rows.cells).toEqual([
+      { x: 0, y: 0, speed: 90, dataAt: t(0, 45) },
+      { x: 1, y: 0, speed: 70, dataAt: t(1, 0) },
+    ]);
+  });
+
+  test('axis labels go on the slot that contains a KST hour divisible by 3, even off the hour', () => {
+    // 23:45 UTC = 08:45 KST 칸(60분)은 09시를 품는다
+    expect(slotHourLabel(T0 - 15 * 60_000, 60)).toBe('09시');
+    expect(slotHourLabel(T0, 60)).toBe('09시'); // 00:00 UTC = 09:00 KST
+    expect(slotHourLabel(T0 + H, 60)).toBeNull();
+    expect(slotHourLabel(T0 + 15 * 60_000, 15)).toBeNull(); // 09:15 칸
+  });
+
+  test('historyHours counts slots, not records', () => {
+    expect(historyHours([t(0, 0), t(0, 45), t(1, 0)].map((dataAt) => ({ dataAt })), 60)).toBe(2);
   });
 });
 
@@ -136,7 +179,7 @@ describe('slowRoutesOption', () => {
 });
 
 describe('levelAreaOption', () => {
-  const o = levelAreaOption([bucket(0), bucket(1, 70, { ok: 40, slow: 40, jam: 20 }), bucket(2)]) as AnyOption;
+  const o = levelAreaOption([bucket(0), bucket(1, 70, { ok: 40, slow: 40, jam: 20 }), bucket(2)], 60) as AnyOption;
 
   test('three stacked series from jam up to flow on one 0–100% axis', () => {
     expect(o.series.map((s: AnyOption) => s.name)).toEqual(['정체', '서행', '원활']);
@@ -144,17 +187,25 @@ describe('levelAreaOption', () => {
     expect([o.yAxis].flat()).toHaveLength(1);
     expect(o.yAxis.min).toBe(0);
     expect(o.yAxis.max).toBe(100);
-    expect(o.series[0].data[1]).toEqual([at(1), 20]);
+    expect(o.series[0].data[1]).toEqual([1, 20]);
   });
 
   test('a crosshair tooltip and a legend for the three series', () => {
     expect(o.tooltip.trigger).toBe('axis');
     expect(o.legend.data).toEqual(['원활', '서행', '정체']);
+    expect(o.tooltip.formatter([{ value: [1, 20] }])).toContain('10:00');
   });
 
-  test('a missing hour breaks the area instead of bridging it', () => {
-    const g = levelAreaOption([bucket(0), bucket(1), bucket(4)]) as AnyOption;
-    expect(g.series[0].data.map((d: unknown[]) => d[1])).toEqual([10, 10, null, 10]);
+  test('a gap longer than 1.5 × interval breaks the area', () => {
+    const g = levelAreaOption([bucket(0), bucket(1), bucket(4)], 60) as AnyOption;
+    expect(g.series[0].data).toEqual([[0, 10], [1, 10], [2, null], [4, 10]]);
+  });
+
+  test('a 45-then-75-minute spacing stays joined', () => {
+    const b = (min: number) => ({ ...bucket(0), dataAt: new Date(T0 + min * 60_000).toISOString() });
+    const g = levelAreaOption([b(0), b(45), b(120)], 60) as AnyOption;
+    // 0분과 45분은 같은 칸(더 새 45분), 다음 기록은 75분 뒤 → 빈 점 없이 잇는다
+    expect(g.series[0].data).toEqual([[0, 10], [2, 10]]);
   });
 });
 

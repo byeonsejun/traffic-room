@@ -157,18 +157,23 @@ export async function activeIncidentCounts(
   return { total, byCategory };
 }
 
-export async function getInsights(db: Db, now: Date): Promise<Insights> {
+/**
+ * 24시간 요약. `trafficUntil`(기본 now)보다 새 교통 기록은 아직 화면에 보일 차례가 아니라 빼고,
+ * 돌발 집계는 `now` 기준 그대로 둔다.
+ */
+export async function getInsights(db: Db, now: Date, opts: { trafficUntil?: Date } = {}): Promise<Insights> {
   const since = iso(new Date(now.getTime() - 26 * HOUR));
   const sinceDay = iso(new Date(now.getTime() - DAY));
+  const until = iso(opts.trafficUntil ?? now);
   const buckets = await db.query<Omit<SnapshotDbRow, 'id' | 'show_at'>>(
     `select data_at, avg_speed, ok, slow, jam, jam_km from traffic_buckets
      where data_at >= $1 and data_at <= $2 order by data_at`,
-    [since, iso(now)],
+    [since, until],
   );
   const routes = await db.query<{ data_at: Date | string; route: string; avg_speed: number }>(
     `select data_at, route, avg_speed from route_buckets
      where data_at >= $1 and data_at <= $2 order by data_at, route`,
-    [since, iso(now)],
+    [since, until],
   );
   const hours = await db.query<{ hour: Date | string; category: Category; n: string | number }>(
     `select date_trunc('hour', started_at at time zone 'UTC') at time zone 'UTC' as hour, category, count(*) as n

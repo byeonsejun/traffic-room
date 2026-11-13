@@ -52,6 +52,19 @@ describe('save / latest', () => {
   });
 });
 
+describe('getInsights trafficUntil', () => {
+  test('buckets and routes stop at trafficUntil so snapshots not shown yet stay out', async () => {
+    await saveTrafficSnapshot(db, snap(at(-90)));
+    await saveTrafficSnapshot(db, snap(at(-60)));
+    await saveTrafficSnapshot(db, snap(at(-30), { showAt: at(30) }));
+    const i = await getInsights(db, now, { trafficUntil: at(-60) });
+    expect(i.buckets.map((b) => b.dataAt)).toEqual([at(-90).toISOString(), at(-60).toISOString()]);
+    expect(i.routes.map((r) => r.dataAt)).toEqual([at(-90).toISOString(), at(-60).toISOString()]);
+    // 기본값은 지금까지(이전 동작 그대로)
+    expect((await getInsights(db, now)).buckets).toHaveLength(3);
+  });
+});
+
 describe('pruneTraffic', () => {
   test('keeps only the newest 3 snapshots and their links', async () => {
     const all: number[] = [];
@@ -144,7 +157,8 @@ describe('incident stats', () => {
     await addIncident('c', 'accident', { started: new Date('2026-11-12T20:00:00Z') });
     await addIncident('old', 'accident', { started: new Date('2026-11-11T20:00:00Z') });
     await addIncident('none', 'accident', { started: null });
-    const { incidentsByHour } = await getInsights(db, now);
+    // 교통 지연 기준(trafficUntil)은 돌발 집계에 영향을 주지 않는다.
+    const { incidentsByHour } = await getInsights(db, now, { trafficUntil: at(-60) });
     expect(incidentsByHour).toEqual([
       { hour: '2026-11-12T20:00:00.000Z', total: 1, byCategory: { accident: 1, breakdown: 0, weather: 0, construction: 0, report: 0, other: 0 } },
       { hour: '2026-11-13T10:00:00.000Z', total: 2, byCategory: { accident: 1, breakdown: 0, weather: 1, construction: 0, report: 0, other: 0 } },

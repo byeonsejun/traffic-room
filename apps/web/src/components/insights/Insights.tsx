@@ -22,7 +22,8 @@ export function Insights() {
   const metrics = useMetrics((s) => s.metrics);
   const insights = useInsights(metrics?.trafficSnapshotId ?? null);
   const { buckets, routes, incidentsByHour, intervalMinutes, loadedAt } = insights.data;
-  const delayMinutes = metrics?.delayMinutes ?? 60;
+  // SSE 지표가 오기 전에는 /api/insights 가 준 설정값을 쓴다.
+  const delayMinutes = metrics?.delayMinutes ?? insights.data.delayMinutes;
   const dataAt = metrics?.trafficDataAt ?? buckets.at(-1)?.dataAt ?? null;
   const timing = metrics ? { delayMinutes: metrics.delayMinutes, intervalMinutes: metrics.intervalMinutes } : undefined;
 
@@ -43,9 +44,9 @@ export function Insights() {
         <HistoryBand insights={insights} />
         <KpiTiles metrics={metrics} buckets={buckets} intervalMinutes={intervalMinutes} />
         <div className="ins-grid">
-          <RouteHeatmap routes={routes} status={insights.status} />
+          <RouteHeatmap routes={routes} intervalMinutes={intervalMinutes} status={insights.status} />
           <SlowRoutes routes={routes} status={insights.status} />
-          <LevelArea buckets={buckets} status={insights.status} />
+          <LevelArea buckets={buckets} intervalMinutes={intervalMinutes} status={insights.status} />
           <IncidentHours incidentsByHour={incidentsByHour} loadedAt={loadedAt} status={insights.status} />
         </div>
       </main>

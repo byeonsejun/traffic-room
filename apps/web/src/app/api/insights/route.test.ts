@@ -44,6 +44,21 @@ describe('with DATABASE_URL', () => {
     expect(body.intervalMinutes).toBe(60);
   });
 
+  test('snapshots newer than now − delay are not shown yet and stay out', async () => {
+    const save = (dataAt: Date) => saveTrafficSnapshot(db, {
+      dataAt, collectedAt: dataAt, showAt: new Date(dataAt.getTime() + 60 * 60_000),
+      summary: { avgSpeed: 72, ok: 3, slow: 1, jam: 0, jamKm: 0 },
+      routes: [{ route: '경부고속도로', avgSpeed: 72 }],
+      speeds: [{ linkId: 'L1', speed: 72 }],
+    });
+    const shown = new Date(Date.now() - 90 * 60_000);
+    await save(shown);
+    await save(new Date(Date.now() - 20 * 60_000));
+    const body = await (await GET()).json();
+    expect(body.buckets.map((b: { dataAt: string }) => b.dataAt)).toEqual([shown.toISOString()]);
+    expect(body.routes.map((r: { dataAt: string }) => r.dataAt)).toEqual([shown.toISOString()]);
+  });
+
   test('timing follows the environment', async () => {
     vi.stubEnv('DELAY_MINUTES', '20');
     vi.stubEnv('COLLECT_INTERVAL_MINUTES', '30');

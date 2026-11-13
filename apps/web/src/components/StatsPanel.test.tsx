@@ -12,7 +12,7 @@ vi.mock('./charts/EChart', () => ({
 }));
 
 const hist = (buckets: InsightsData['buckets'], intervalMinutes = 60, status: InsightsState['status'] = 'ok'): InsightsState => ({
-  status, data: { buckets, routes: [], incidentsByHour: [], intervalMinutes, loadedAt: 0 },
+  status, data: { buckets, routes: [], incidentsByHour: [], intervalMinutes, delayMinutes: 60, loadedAt: 0 },
 });
 
 beforeEach(() => {
