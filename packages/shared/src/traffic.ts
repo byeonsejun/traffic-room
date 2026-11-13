@@ -37,7 +37,8 @@ export const metricsSchema = z.object({
   delayMinutes: z.number(),
   intervalMinutes: z.number(),
   /** 마지막으로 성공한 수집 시각(ISO). 수집 기록이 없으면 null. */
-  collectedAt: z.string().nullable(),
+  // 옛 realtime 서버는 이 필드를 보내지 않는다. 배포 순서와 상관없이 파싱되도록 기본값을 null 로 둔다.
+  collectedAt: z.string().nullable().default(null),
 });
 
 export type Metrics = z.infer<typeof metricsSchema>;

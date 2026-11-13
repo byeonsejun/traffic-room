@@ -487,4 +487,26 @@ test('with no SSE metrics for interval + 5 minutes, traffic and insights are ref
   await push({ ...metrics(null), intervalMinutes: 15 });
   await advance(19);
   expect([calls('/api/traffic'), calls('/api/insights')]).toEqual([3, 3]);
+  // 지표가 다시 조용해지면(간격 + 5분) 대비 갱신이 다시 시작되고, 그 뒤에는 간격마다 한 번씩이다.
+  await advance(1);
+  expect([calls('/api/traffic'), calls('/api/insights')]).toEqual([4, 4]);
+  await advance(15);
+  expect([calls('/api/traffic'), calls('/api/insights')]).toEqual([5, 5]);
+});
+
+test('the fallback skips ticks while the tab is hidden and catches up once when it is visible again', async () => {
+  snapshots.push(() => ok(snap(1)));
+  insights = () => ok({ buckets: [], routes: [], incidentsByHour: [], delayMinutes: 60, intervalMinutes: 15 });
+  await mount();
+  const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+  await advance(50);
+  expect([calls('/api/traffic'), calls('/api/insights')]).toEqual([1, 1]);
+  hidden.mockReturnValue(false);
+  document.dispatchEvent(new Event('visibilitychange'));
+  await flush();
+  expect([calls('/api/traffic'), calls('/api/insights')]).toEqual([2, 2]);
+  document.dispatchEvent(new Event('visibilitychange'));
+  await flush();
+  expect([calls('/api/traffic'), calls('/api/insights')]).toEqual([2, 2]);
+  hidden.mockRestore();
 });

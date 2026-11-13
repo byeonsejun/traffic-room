@@ -66,6 +66,13 @@ test('a valid metrics event is handed over once', () => {
   expect(onMetrics).toHaveBeenCalledWith(metrics);
 });
 
+test('a metrics event from an older server without collectedAt is accepted with null', () => {
+  open();
+  const { collectedAt: _omit, ...old } = metrics;
+  FakeEventSource.all[0]!.emit('metrics', JSON.stringify(old));
+  expect(onMetrics).toHaveBeenCalledWith({ ...old, collectedAt: null });
+});
+
 test('broken JSON or a wrong shape is ignored', () => {
   open();
   const es = FakeEventSource.all[0]!;

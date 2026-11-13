@@ -29,7 +29,19 @@ export function useFallbackTick(live: boolean): number {
   useEffect(() => {
     const ms = intervalMinutes * 60_000;
     let iv: ReturnType<typeof setInterval> | undefined;
-    const bump = () => setTick((n) => n + 1);
+    // 숨겨진 탭은 건너뛰고, 다시 보일 때 밀린 것이 있으면 한 번만 따라잡는다.
+    let skipped = false;
+    const bump = () => {
+      if (document.hidden) skipped = true;
+      else setTick((n) => n + 1);
+    };
+    const onVisible = () => {
+      if (skipped && !document.hidden) {
+        skipped = false;
+        setTick((n) => n + 1);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
     const since = quietSince.current ?? Date.now();
     const wait = live ? Math.max(0, since + ms + SILENCE_GRACE_MS - Date.now()) : ms;
     const t = setTimeout(() => {
@@ -39,6 +51,7 @@ export function useFallbackTick(live: boolean): number {
     return () => {
       clearTimeout(t);
       clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [metrics, live, intervalMinutes]);
 

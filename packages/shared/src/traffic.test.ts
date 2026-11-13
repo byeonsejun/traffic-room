@@ -39,6 +39,13 @@ describe('metricsSchema', () => {
     expect(metricsSchema.safeParse(empty).success).toBe(true);
   });
 
+  it('collectedAt 이 없는 옛 서버의 지표도 받아 null 로 채운다', () => {
+    const { collectedAt: _omit, ...old } = valid;
+    const r = metricsSchema.safeParse(old);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.collectedAt).toBeNull();
+  });
+
   it('카테고리 집계가 빠지면 거부한다', () => {
     const bad = { ...valid, incidents: { total: 1, byCategory: { accident: 1 } } };
     expect(metricsSchema.safeParse(bad).success).toBe(false);
