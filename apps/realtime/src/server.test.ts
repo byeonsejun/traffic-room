@@ -22,7 +22,7 @@ const SEOCHO: Cctv = {
 };
 
 function fakeIts(list: Cctv[] = []): ItsClient & { cctvs: ReturnType<typeof vi.fn> } {
-  return { events: vi.fn(async () => []), cctvs: vi.fn(async () => list) };
+  return { events: vi.fn(async () => []), cctvs: vi.fn(async () => list), traffic: vi.fn(async () => ({ dataAt: [], items: [] })) };
 }
 
 let apps: FastifyInstance[] = [];

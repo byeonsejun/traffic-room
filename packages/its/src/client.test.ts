@@ -37,6 +37,22 @@ describe('live client', () => {
     expect(urls[2]).toContain('minX=124&maxX=132&minY=33&maxY=39');
   });
 
+  test('traffic: nationwide url, no key leak on errors', async () => {
+    const ok = fakeFetch({ header: { resultCode: 0 }, body: { items: [{ linkId: '1', roadName: 'A', speed: '50', createdDate: '20261113110000' }] } });
+    const c = createItsClient({ mode: 'live', apiKey: 'SECRETKEY', fetchImpl: ok });
+    const r = await c.traffic();
+    expect(r.items).toHaveLength(1);
+    const url = String((ok as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![0]);
+    expect(url).toContain('/trafficInfo?');
+    expect(url).toContain('type=all');
+    expect(url).toContain('drcType=all');
+    expect(url).toContain('minX=124');
+    const bad = createItsClient({ mode: 'live', apiKey: 'SECRETKEY', fetchImpl: fakeFetch({ header: { resultCode: 4001, resultMsg: 'x' } }) });
+    const e = await bad.traffic().catch((x) => x);
+    expect(e).toBeInstanceOf(ItsError);
+    expect(String(e.message) + String(e.stack)).not.toContain('SECRETKEY');
+  });
+
   test('requires a key', async () => {
     await expect(createItsClient({ mode: 'live', fetchImpl: fakeFetch({}) }).events()).rejects.toMatchObject({ code: 'NO_KEY' });
   });
@@ -49,5 +65,11 @@ describe('fixture client', () => {
     expect((await c.events()).length).toBe(284);
     expect((await c.cctvs('ex')).length).toBe(172);
     expect(f).not.toHaveBeenCalled();
+  });
+
+  test('traffic reads the real 2026-11-13 11:00 snapshot', async () => {
+    const t = await createItsClient({ mode: 'fixture' }).traffic();
+    expect(t.items.length).toBeGreaterThan(0);
+    expect(t.dataAt).toEqual(['2026-11-13T02:00:00.000Z']);
   });
 });

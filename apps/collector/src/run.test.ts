@@ -15,7 +15,7 @@ const timing = readTiming({});
 const at = (hm: string) => new Date(`2026-11-11T${hm}:00+09:00`);
 
 function fakeIts(over: Partial<ItsClient> = {}): ItsClient {
-  return { events: vi.fn(async () => []), cctvs: vi.fn(async () => []), ...over };
+  return { events: vi.fn(async () => []), cctvs: vi.fn(async () => []), traffic: vi.fn(async () => ({ dataAt: [], items: [] })), ...over };
 }
 const failedRuns = async (db: Db) =>
   (await db.query<{ n: number }>("select count(*)::int as n from collector_runs where not ok"))[0]!.n;

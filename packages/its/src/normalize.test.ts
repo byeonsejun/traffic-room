@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
-import { categorize, incidentKey, normalizeCctvs, normalizeEvents } from './normalize.ts';
+import { ItsError } from './client.ts';
+import { categorize, incidentKey, normalizeCctvs, normalizeEvents, normalizeTraffic } from './normalize.ts';
 
 const fixture = (name: string): unknown =>
   JSON.parse(readFileSync(new URL(`../fixtures/${name}`, import.meta.url), 'utf8'));
@@ -86,5 +87,30 @@ describe('normalizeCctvs', () => {
     ] } }, new Date(0));
     expect(list.map((c) => c.name)).toEqual(['a', 'b']);
     expect(new Set(list.map((c) => c.id)).size).toBe(2);
+  });
+});
+
+describe('normalizeTraffic', () => {
+  const t = (...items: object[]) => ({ header: { resultCode: 0 }, body: { items } });
+  const r = { linkId: '1', roadName: '경부고속도로', speed: '80', createdDate: '20261113110000' };
+
+  test('rejects a non-zero resultCode', () => {
+    expect(() => normalizeTraffic({ header: { resultCode: 1 } })).toThrowError(ItsError);
+  });
+
+  test('drops items whose speed is not a number', () => {
+    const out = normalizeTraffic(t(r, { ...r, linkId: '2', speed: '' }, { ...r, linkId: '3', speed: 'x' }));
+    expect(out.items).toEqual([{ linkId: '1', roadName: '경부고속도로', speed: 80 }]);
+  });
+
+  test('collects distinct createdDate as UTC ISO', () => {
+    const out = normalizeTraffic(t(r, { ...r, linkId: '2', createdDate: '20261113110500' }, { ...r, linkId: '3' }));
+    expect(out.dataAt).toEqual(['2026-11-13T02:00:00.000Z', '2026-11-13T02:05:00.000Z']);
+  });
+
+  test('normalizes the real snapshot', () => {
+    const out = normalizeTraffic(fixture('traffic.json'));
+    expect(out.items.length).toBeGreaterThan(1000);
+    expect(out.dataAt).toEqual(['2026-11-13T02:00:00.000Z']);
   });
 });

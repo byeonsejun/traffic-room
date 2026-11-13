@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Category, Cctv, Incident } from '@traffic-room/shared';
+import { ItsError } from './client.ts';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null;
@@ -72,4 +73,27 @@ export function normalizeCctvs(raw: unknown, fetchedAt: Date): Cctv[] {
     out.push({ id: sha1(`${name}|${lon}|${lat}`), name, lon, lat, url, fetchedAt: fetchedAt.toISOString() });
   }
   return out;
+}
+
+export type TrafficFetch = { dataAt: string[]; items: { linkId: string; roadName: string; speed: number }[] };
+
+/** 교통소통 응답을 읽는다. 속도가 숫자가 아닌 항목은 뺀다. 기준 시각 검증은 호출하는 쪽이 한다. */
+export function normalizeTraffic(raw: unknown): TrafficFetch {
+  const header = isObj(raw) && isObj(raw.header) ? raw.header : {};
+  if (Number(header.resultCode) !== 0) {
+    throw new ItsError('ITS_RESULT', `ITS 교통 응답 오류 ${str(header.resultCode)}`);
+  }
+  const rows = isObj(raw) && isObj(raw.body) && Array.isArray(raw.body.items) ? raw.body.items : [];
+  const items: TrafficFetch['items'] = [];
+  const dataAt = new Set<string>();
+  for (const r of rows) {
+    if (!isObj(r)) continue;
+    const text = str(r.speed);
+    const speed = Number(text);
+    if (text === '' || !Number.isFinite(speed)) continue;
+    items.push({ linkId: str(r.linkId), roadName: str(r.roadName), speed });
+    const at = parseKst(str(r.createdDate));
+    if (at) dataAt.add(at);
+  }
+  return { dataAt: [...dataAt].sort(), items };
 }
