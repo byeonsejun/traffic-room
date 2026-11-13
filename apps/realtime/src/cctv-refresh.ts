@@ -1,5 +1,6 @@
 import { canCall, getCctv, recordRun, updateCctvUrl, type Db } from '@traffic-room/db';
 import type { ItsClient } from '@traffic-room/its';
+import type { Timing } from '@traffic-room/shared';
 
 export type CctvUrlResult = { url: string | null; reason: 'cached' | 'refreshed' | 'unavailable' };
 
@@ -34,6 +35,7 @@ export interface RefreshDeps {
   its: ItsClient;
   now: () => Date;
   quota: DailyQuota;
+  timing: Timing;
 }
 
 const BBOX_MARGIN = 0.01;
@@ -50,12 +52,12 @@ function cctvType(name: string): 'ex' | 'its' {
  * - 호출했지만 실패했거나 같은 이름이 없으면 저장된 주소를 cached 로 돌려준다.
  */
 export async function refreshCctv(deps: RefreshDeps, cctvId: string): Promise<CctvUrlResult> {
-  const { db, its, quota } = deps;
+  const { db, its, quota, timing } = deps;
   const cctv = await getCctv(db, cctvId);
   if (!cctv) return { url: null, reason: 'unavailable' };
 
   const at = deps.now();
-  if (!(await canCall(db, 'cctv', at)) || !quota.tryTake(at)) {
+  if (!(await canCall(db, 'cctv', at, timing.monthlyLimit)) || !quota.tryTake(at)) {
     return { url: null, reason: 'unavailable' };
   }
 

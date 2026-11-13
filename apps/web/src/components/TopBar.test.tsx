@@ -12,8 +12,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const bar = (collectedAt: string | null | undefined) =>
-  render(<TopBar status="open" live={true} collectedAt={collectedAt} />);
+const bar = (collectedAt: string | null | undefined, delayMinutes = 60) =>
+  render(<TopBar status="open" live={true} collectedAt={collectedAt} delayMinutes={delayMinutes} />);
 
 test('shows the last collection time in KST next to the delay note', () => {
   // 14:05 KST, 1시간 25분 전
@@ -21,6 +21,11 @@ test('shows the last collection time in KST next to the delay note', () => {
   const el = screen.getByText('마지막 수집 14:05');
   expect(el.className).not.toContain('stale');
   expect(screen.getByText('약 1시간 지연')).toBeTruthy();
+});
+
+test('shows the configured delay in minutes', () => {
+  bar(null, 20);
+  expect(screen.getByText('약 20분 지연')).toBeTruthy();
 });
 
 test('uses 24h clock at midnight', () => {

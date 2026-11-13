@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyWebsocket from '@fastify/websocket';
 import { getCctv, getEventsAfter, latestEmittedId, type Db } from '@traffic-room/db';
 import type { ItsClient } from '@traffic-room/its';
-import { DELAY_MINUTES, parseClientMessage, type ClientMessage, type ServerMessage } from '@traffic-room/shared';
+import { parseClientMessage, type ClientMessage, type ServerMessage, type Timing } from '@traffic-room/shared';
 import { createHub, toIncidentMessage, type Hub } from './hub.ts';
 import { createDailyQuota, refreshCctv, type CctvUrlResult, type DailyQuota } from './cctv-refresh.ts';
 
@@ -10,6 +10,7 @@ export interface ServerDeps {
   db: Db;
   its: ItsClient;
   now: () => Date;
+  timing: Timing;
   allowedOrigins: string[];
   /** 스케줄러가 broadcast 할 허브. 없으면 내부에서 만든다. */
   hub?: Hub;
@@ -94,7 +95,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     enqueue(async () => {
       send({
         id: 0, type: 'hello', ts: now().toISOString(),
-        payload: { delayMinutes: DELAY_MINUTES, latestId: await latestEmittedId(db, now()) },
+        payload: { delayMinutes: deps.timing.delayMinutes, latestId: await latestEmittedId(db, now()) },
       });
       if (resumeFrom !== null) await resume(resumeFrom, send);
     });
@@ -108,7 +109,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   });
 
   async function cctvUrl(cctvId: string, refresh: boolean): Promise<CctvUrlResult> {
-    if (refresh && cctvRefresh) return refreshCctv({ db, its, now, quota }, cctvId);
+    if (refresh && cctvRefresh) return refreshCctv({ db, its, now, quota, timing: deps.timing }, cctvId);
     const c = await getCctv(db, cctvId);
     return c ? { url: c.url, reason: 'cached' } : { url: null, reason: 'unavailable' };
   }

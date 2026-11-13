@@ -1,15 +1,15 @@
-import { DELAY_MINUTES } from '@traffic-room/shared';
+import type { Timing } from '@traffic-room/shared';
 import { applyIncidentPlan, canCall, getActiveKeys, lastCollectedAt, recordRun, type Db } from '@traffic-room/db';
 import type { ItsClient } from '@traffic-room/its';
 import { depsFromEnv, errorCode } from './env.ts';
 import { planIncidentChanges } from './plan.ts';
 
-export interface RunDeps { db: Db; its: ItsClient; now: () => Date }
+export interface RunDeps { db: Db; its: ItsClient; now: () => Date; timing: Timing }
 export interface EventsResult { status: 'ok' | 'skipped-budget' | 'failed'; arrived: number; cleared: number; code?: string }
 
-export async function runEvents({ db, its, now }: RunDeps): Promise<EventsResult> {
+export async function runEvents({ db, its, now, timing }: RunDeps): Promise<EventsResult> {
   const collectedAt = now();
-  if (!(await canCall(db, 'events', collectedAt))) {
+  if (!(await canCall(db, 'events', collectedAt, timing.monthlyLimit))) {
     return { status: 'skipped-budget', arrived: 0, cleared: 0 };
   }
   // 호출 전에 이전 성공 시각을 읽어 둔다(이번 실행 기록이 섞이지 않게).
@@ -17,7 +17,7 @@ export async function runEvents({ db, its, now }: RunDeps): Promise<EventsResult
   try {
     const fetched = await its.events();
     const activeKeys = await getActiveKeys(db);
-    const plan = planIncidentChanges({ activeKeys, fetched, collectedAt, prevCollectedAt: prev, delayMinutes: DELAY_MINUTES });
+    const plan = planIncidentChanges({ activeKeys, fetched, collectedAt, prevCollectedAt: prev, delayMinutes: timing.delayMinutes });
     await applyIncidentPlan(db, plan, collectedAt);
     await recordRun(db, 'events', true, fetched.length, collectedAt);
     return { status: 'ok', arrived: plan.arriving.length, cleared: plan.cleared.length };

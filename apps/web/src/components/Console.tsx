@@ -34,6 +34,8 @@ export function Console() {
 
   const [cctvs, setCctvs] = useState<Cctv[]>([]);
   const [collectedAt, setCollectedAt] = useState<string | null>(null);
+  // 스냅샷이 오기 전에는 기본 지연(60분)으로 보여 준다.
+  const [delayMinutes, setDelayMinutes] = useState(60);
   const [notices, setNotices] = useState<Partial<Record<NoticeSource, string>>>({});
   const client = useRef<ReturnType<typeof createRealtimeClient> | null>(null);
   const send = useCallback((m: ClientMessage) => client.current?.send(m), []);
@@ -91,6 +93,7 @@ export function Console() {
         if (!live) return;
         useConsole.getState().applySnapshot(s, { reset });
         setCollectedAt(s.collectedAt);
+        setDelayMinutes(s.delayMinutes);
         clearNote('snapshot');
         connect();
       } catch (e) {
@@ -115,7 +118,7 @@ export function Console() {
 
   return (
     <div className="console">
-      <TopBar status={status} retryInMs={retryInMs} live={!!REALTIME_URL} beat={arrivalId} collectedAt={collectedAt} />
+      <TopBar status={status} retryInMs={retryInMs} live={!!REALTIME_URL} beat={arrivalId} collectedAt={collectedAt} delayMinutes={delayMinutes} />
       <aside className="left" aria-label="돌발상황 지표">
         <StatsPanel arrivalId={arrivalId} collectedAt={collectedAt} />
       </aside>

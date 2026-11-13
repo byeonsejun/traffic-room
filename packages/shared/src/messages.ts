@@ -1,8 +1,6 @@
 import { z } from 'zod';
 import type { Incident } from './incident.ts';
 
-export const DELAY_MINUTES = 60;
-
 export const categorySchema = z.enum(['accident', 'breakdown', 'weather', 'construction', 'report', 'other']);
 
 export const incidentSchema = z.object({

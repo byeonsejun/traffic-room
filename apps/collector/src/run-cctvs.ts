@@ -6,14 +6,14 @@ import type { RunDeps } from './run-events.ts';
 export interface CctvsResult { status: 'ok' | 'skipped-budget' | 'failed'; count: number; code?: string }
 
 /** 고속도로(ex)와 국도(its)를 각 1회 호출한다. 호출마다 한 건씩 기록한다. */
-export async function runCctvs({ db, its, now }: RunDeps): Promise<CctvsResult> {
+export async function runCctvs({ db, its, now, timing }: RunDeps): Promise<CctvsResult> {
   const collected: Cctv[] = [];
   let failedCode: string | undefined;
   let skipped = false;
 
   for (const type of ['ex', 'its'] as const) {
     const at = now();
-    if (!(await canCall(db, 'cctv', at))) {
+    if (!(await canCall(db, 'cctv', at, timing.monthlyLimit))) {
       skipped = true;
       break;
     }

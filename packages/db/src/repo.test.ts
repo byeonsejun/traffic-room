@@ -139,14 +139,22 @@ describe('collector runs', () => {
     expect(await lastCollectedAt(db, 'events')).toBeNull();
   });
 
+  test('canCall follows the given limit', async () => {
+    for (const m of ['01:00', '02:00']) await recordRun(db, 'events', true, 0, t(m));
+    expect(await canCall(db, 'events', t('04:00'), 3)).toBe(true);
+    await recordRun(db, 'events', true, 0, t('03:00'));
+    expect(await canCall(db, 'events', t('04:00'), 3)).toBe(false);
+    expect(await canCall(db, 'traffic', t('04:00'), 3)).toBe(true);
+  });
+
   test('canCall is false from 950 runs this month', async () => {
     await db.query(
       `insert into collector_runs (service, ran_at, ok, count)
        select 'events', $1::timestamptz, true, 0 from generate_series(1, 949)`, [t('01:00').toISOString()]);
-    expect(await canCall(db, 'events', t('04:00'))).toBe(true);
+    expect(await canCall(db, 'events', t('04:00'), 950)).toBe(true);
     await recordRun(db, 'events', true, 0, t('02:00'));
-    expect(await canCall(db, 'events', t('04:00'))).toBe(false);
-    expect(await canCall(db, 'cctv', t('04:00'))).toBe(true);
+    expect(await canCall(db, 'events', t('04:00'), 950)).toBe(false);
+    expect(await canCall(db, 'cctv', t('04:00'), 950)).toBe(true);
   });
 });
 

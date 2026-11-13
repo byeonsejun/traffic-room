@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { logFailure } from '@/lib/log';
 import { createNeonDb, getActiveIncidents, lastCollectedAt, latestEmittedId } from '@traffic-room/db';
 import { createItsClient } from '@traffic-room/its';
-import { DELAY_MINUTES } from '@traffic-room/shared';
+import { readTiming } from '@traffic-room/shared';
 import type { Snapshot } from '@/store/console';
 
 export const dynamic = 'force-dynamic';
@@ -19,19 +19,21 @@ export async function GET() {
       // 개발 전용 재생: 키도 DB도 없을 때만 픽스처로 채운다.
       const mode = process.env.ITS_MODE;
       if (process.env.NODE_ENV === 'production' || (mode && mode !== 'fixture')) throw new Error('no database');
+      const { delayMinutes } = readTiming(process.env);
       const incidents = await createItsClient({ mode: 'fixture' }).events();
-      const body: Snapshot = { incidents, latestId: 0, collectedAt: null, delayMinutes: DELAY_MINUTES };
+      const body: Snapshot = { incidents, latestId: 0, collectedAt: null, delayMinutes };
       return NextResponse.json(body, { headers: OK_HEADERS });
     }
     const db = createNeonDb(url);
     const now = new Date();
+    const { delayMinutes } = readTiming(process.env);
     const [incidents, latestId, collected] = await Promise.all([
       getActiveIncidents(db, now),
       latestEmittedId(db, now),
       lastCollectedAt(db, 'events'),
     ]);
     const body: Snapshot = {
-      incidents, latestId, collectedAt: collected ? collected.toISOString() : null, delayMinutes: DELAY_MINUTES,
+      incidents, latestId, collectedAt: collected ? collected.toISOString() : null, delayMinutes,
     };
     return NextResponse.json(body, { headers: OK_HEADERS });
   } catch (e) {

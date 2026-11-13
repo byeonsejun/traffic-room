@@ -1,6 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
+import { delayLabel } from '@traffic-room/shared';
 import { hhmm, hhmmss, mdhhmm } from '@/lib/time';
 import type { ConnStatus } from '@/lib/realtime-client';
 import { ConnectionBadge } from './ConnectionBadge';
@@ -36,14 +37,14 @@ function LastCollected({ collectedAt }: { collectedAt: string }) {
   );
 }
 
-type Props = { status: ConnStatus; retryInMs?: number; live: boolean; beat?: number; collectedAt?: string | null };
+type Props = { status: ConnStatus; retryInMs?: number; live: boolean; beat?: number; collectedAt?: string | null; delayMinutes: number };
 
-export function TopBar({ status, retryInMs, live, beat, collectedAt }: Props) {
+export function TopBar({ status, retryInMs, live, beat, collectedAt, delayMinutes }: Props) {
   return (
     <header className="top">
       <h1>전국 도로 상황실</h1>
       <ConnectionBadge status={status} retryInMs={retryInMs} live={live} beat={beat} />
-      <span className="delay">약 1시간 지연</span>
+      <span className="delay">{delayLabel(delayMinutes)}</span>
       {collectedAt && <LastCollected collectedAt={collectedAt} />}
       <Clock />
     </header>

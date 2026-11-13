@@ -1,16 +1,13 @@
 import type { Cctv, Incident, LogEvent } from '@traffic-room/shared';
 import type { Db, Statement } from './db.ts';
 
-export type Service = 'events' | 'cctv';
+export type Service = 'events' | 'cctv' | 'traffic';
 export type IncidentPlan = {
   quiet: Incident[];
   arriving: { incident: Incident; emitAt: Date }[];
   seen: string[];
   cleared: { key: string; emitAt: Date }[];
 };
-
-/** 월 호출 한도(서비스별 1,000건) 앞의 안전 여유. 이 값 이상이면 호출하지 않는다. */
-export const MONTHLY_CALL_LIMIT = 950;
 
 const iso = (d: Date) => d.toISOString();
 const toDate = (v: unknown) => (v instanceof Date ? v : new Date(v as string));
@@ -196,8 +193,9 @@ export async function countRunsThisMonth(db: Db, service: Service, now: Date): P
   return Number(rows[0]?.n ?? 0);
 }
 
-export async function canCall(db: Db, service: Service, now: Date): Promise<boolean> {
-  return (await countRunsThisMonth(db, service, now)) < MONTHLY_CALL_LIMIT;
+/** 이번 달 호출 수가 limit(설정의 월 한도) 미만일 때만 true. */
+export async function canCall(db: Db, service: Service, now: Date, limit: number): Promise<boolean> {
+  return (await countRunsThisMonth(db, service, now)) < limit;
 }
 
 interface CctvRow { id: string; name: string; lon: number; lat: number; url: string; fetched_at: Date | string }

@@ -103,6 +103,11 @@ describe('fixture replay without DATABASE_URL', () => {
     vi.stubEnv('ITS_MODE', '');
   });
 
+  test('delayMinutes follows DELAY_MINUTES', async () => {
+    vi.stubEnv('DELAY_MINUTES', '20');
+    expect((await (await getSnapshot()).json()).delayMinutes).toBe(20);
+  });
+
   test('snapshot is built from the events fixture', async () => {
     const body = await (await getSnapshot()).json();
     expect(body.incidents.length).toBeGreaterThan(250);

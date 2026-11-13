@@ -3,7 +3,7 @@ import type { WebSocket } from '@fastify/websocket';
 import { createTestDb } from '@traffic-room/db/test-db';
 import { applyIncidentPlan, getCctv, recordRun, upsertCctvs, type Db } from '@traffic-room/db';
 import type { ItsClient } from '@traffic-room/its';
-import { parseServerMessage, type Cctv, type Incident, type LogEvent, type ServerMessage } from '@traffic-room/shared';
+import { parseServerMessage, readTiming, type Cctv, type Incident, type LogEvent, type ServerMessage } from '@traffic-room/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildServer } from './server.ts';
 import { createHub } from './hub.ts';
@@ -35,7 +35,7 @@ async function setup(opts: { its?: ItsClient; db?: Db; idleMs?: number; cctvRefr
   const db = opts.db ?? (await createTestDb());
   const its = opts.its ?? fakeIts();
   const hub = createHub();
-  const app = await buildServer({ db, its, now: () => NOW, allowedOrigins: [ORIGIN], hub, idleMs: opts.idleMs, cctvRefresh: opts.cctvRefresh });
+  const app = await buildServer({ db, its, timing: readTiming({}), now: () => NOW, allowedOrigins: [ORIGIN], hub, idleMs: opts.idleMs, cctvRefresh: opts.cctvRefresh });
   await app.ready();
   apps.push(app);
   return { app, db, its, hub };
@@ -326,7 +326,7 @@ describe('refreshCctv', () => {
   async function deps(its: ItsClient) {
     const db = await createTestDb();
     await upsertCctvs(db, [SEOCHO]);
-    return { db, its, now: () => NOW, quota: createDailyQuota(10) };
+    return { db, its, timing: readTiming({}), now: () => NOW, quota: createDailyQuota(10) };
   }
 
   test('cctv refresh returns unavailable after 10 refreshes today', async () => {
