@@ -36,6 +36,8 @@ export function Console() {
   // 지표 스트림 연결 하나. 끊겨도 마지막 지표와 도로 색을 그대로 둔다. 연결 상태는 WebSocket 배지가 이미 보여 준다.
   useMetricsStream();
   const metrics = useMetrics((s) => s.metrics);
+  // 페이지를 열어 둔 동안은 SSE 지표가 더 새 수집 시각을 준다. 오래된 값이 새 값을 덮지 않게 큰 쪽을 쓴다.
+  const shownCollectedAt = newerIso(metrics?.collectedAt ?? null, collectedAt);
   // 처음 받기가 실패하면 지도는 바탕선만 그리고 범례가 알린다.
   const traffic = useTraffic(metrics?.trafficSnapshotId ?? null);
   // 왼쪽 평균 속도 추이. 교통 스냅샷이 바뀌면 24시간 요약도 다시 받는다.
@@ -124,13 +126,13 @@ export function Console() {
   return (
     <div className="console">
       <TopBar
-        status={status} retryInMs={retryInMs} live={!!REALTIME_URL} beat={arrivalId} collectedAt={collectedAt}
+        status={status} retryInMs={retryInMs} live={!!REALTIME_URL} beat={arrivalId} collectedAt={shownCollectedAt}
         delayMinutes={metrics?.delayMinutes ?? delayMinutes}
         trafficDataAt={traffic.dataAt} trafficTiming={trafficTiming} page="console"
       />
       <aside className="left" aria-label="교통 · 돌발상황 지표">
         <StatsPanel
-          arrivalId={arrivalId} collectedAt={collectedAt}
+          arrivalId={arrivalId} collectedAt={shownCollectedAt}
           delayMinutes={metrics?.delayMinutes ?? delayMinutes} insights={insights}
         />
       </aside>
@@ -148,4 +150,9 @@ export function Console() {
       </aside>
     </div>
   );
+}
+
+function newerIso(a: string | null, b: string | null): string | null {
+  if (!a || !b) return a ?? b;
+  return Date.parse(a) >= Date.parse(b) ? a : b;
 }

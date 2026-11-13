@@ -31,7 +31,12 @@ function ev(id: number, kind: LogEvent['kind'], category: Category = 'accident',
   };
 }
 
-type Loaded = { shown: TrafficSnapshotRow | null; upcoming: TrafficSnapshotRow[]; incidents: Metrics['incidents'] };
+type Loaded = {
+  shown: TrafficSnapshotRow | null;
+  upcoming: TrafficSnapshotRow[];
+  incidents: Metrics['incidents'];
+  collectedAt?: Date | null;
+};
 
 function make(load: (at: Date) => Promise<Loaded>, env: Record<string, string> = {}) {
   return createMetricsState({
@@ -319,4 +324,20 @@ test('start: 수집 간격 60분이면 30분마다 다시 읽는다', async () =
   await vi.advanceTimersByTimeAsync(30 * MIN);
   expect(calls).toBe(3);
   m.stop();
+});
+
+test('마지막 수집 시각을 지표에 싣고, 값이 바뀌면 구독자에게 알린다', async () => {
+  const t1 = new Date('2026-11-13T08:05:00.000Z');
+  const t2 = new Date('2026-11-13T08:20:00.000Z');
+  let at = t1;
+  const m = make(async () => ({ shown: null, upcoming: [], incidents: { total: 0, byCategory: zero() }, collectedAt: at }));
+  await m.reload();
+  expect(m.current().collectedAt).toBe(t1.toISOString());
+  const seen: Array<string | null> = [];
+  m.subscribe((x) => seen.push(x.collectedAt));
+  await m.reload();
+  expect(seen).toEqual([]);
+  at = t2;
+  await m.reload();
+  expect(seen).toEqual([t2.toISOString()]);
 });

@@ -1,5 +1,5 @@
 import {
-  activeIncidentCounts, createNeonDb, getEventsBetween, shownTrafficSnapshot, upcomingTrafficSnapshots,
+  activeIncidentCounts, createNeonDb, getEventsBetween, lastCollectedAt, shownTrafficSnapshot, upcomingTrafficSnapshots,
 } from '@traffic-room/db';
 import { createItsClient } from '@traffic-room/its';
 import { readTiming } from '@traffic-room/shared';
@@ -31,12 +31,13 @@ const SCHEDULER_RELOAD_MINUTES = 30;
 // 그래서 다음 스냅샷이 DB 에 있으면 nextTrafficAt 은 늘 알려진다.
 const metrics = createMetricsState({
   load: async (at) => {
-    const [shown, upcoming, incidents] = await Promise.all([
+    const [shown, upcoming, incidents, collectedAt] = await Promise.all([
       shownTrafficSnapshot(db, at),
       upcomingTrafficSnapshots(db, at),
       activeIncidentCounts(db, at),
+      lastCollectedAt(db, 'events'),
     ]);
-    return { shown, upcoming, incidents };
+    return { shown, upcoming, incidents, collectedAt };
   },
   now,
   timing,

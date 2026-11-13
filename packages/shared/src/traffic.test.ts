@@ -27,6 +27,7 @@ describe('metricsSchema', () => {
     incidents: { total: 4, byCategory: { accident: 1, breakdown: 1, weather: 0, construction: 2, report: 0, other: 0 } },
     delayMinutes: 60,
     intervalMinutes: 60,
+    collectedAt: '2026-11-13T08:20:00.000Z',
   };
 
   it('올바른 지표를 받는다', () => {

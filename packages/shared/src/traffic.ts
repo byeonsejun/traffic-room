@@ -36,6 +36,8 @@ export const metricsSchema = z.object({
   incidents: z.object({ total: z.number().int().nonnegative(), byCategory: byCategorySchema }),
   delayMinutes: z.number(),
   intervalMinutes: z.number(),
+  /** 마지막으로 성공한 수집 시각(ISO). 수집 기록이 없으면 null. */
+  collectedAt: z.string().nullable(),
 });
 
 export type Metrics = z.infer<typeof metricsSchema>;

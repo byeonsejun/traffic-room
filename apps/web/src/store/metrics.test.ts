@@ -25,6 +25,7 @@ const m = (trafficSnapshotId: number): Metrics => ({
   incidents: { total: 0, byCategory: { accident: 0, breakdown: 0, weather: 0, construction: 0, report: 0, other: 0 } },
   delayMinutes: 60,
   intervalMinutes: 60,
+  collectedAt: null,
 });
 
 beforeEach(() => useMetrics.setState(useMetrics.getInitialState(), true));

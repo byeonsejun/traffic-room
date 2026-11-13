@@ -51,7 +51,7 @@ const metrics = (avgSpeed: number): Metrics => ({
   trafficSnapshotId: 3, trafficDataAt: '2026-11-13T02:00:00.000Z', nextTrafficAt: null,
   traffic: { avgSpeed, ok: 5610, slow: 2671, jam: 683, jamKm: 120 },
   incidents: { total: 0, byCategory: { accident: 0, breakdown: 0, weather: 0, construction: 0, report: 0, other: 0 } },
-  delayMinutes: 60, intervalMinutes: 60,
+  delayMinutes: 60, intervalMinutes: 60, collectedAt: null,
 });
 const panel = (props: Partial<Parameters<typeof StatsPanel>[0]> = {}) =>
   render(<StatsPanel collectedAt={null} delayMinutes={60} insights={hist([])} {...props} />);

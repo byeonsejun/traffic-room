@@ -214,6 +214,7 @@ const metrics = (trafficSnapshotId: number | null, dataAt: string | null = '2026
   incidents: { total: 0, byCategory: { accident: 0, breakdown: 0, weather: 0, construction: 0, report: 0, other: 0 } },
   delayMinutes: 60,
   intervalMinutes: 60,
+  collectedAt: null,
 });
 const push = async (m: Metrics) => {
   act(() => streams[0]!.opts.onMetrics(m));
@@ -375,14 +376,14 @@ test('metrics naming an older snapshot than the one shown do not refetch', async
 const metricsFor = (trafficSnapshotId: number): Metrics => ({
   trafficSnapshotId, trafficDataAt: '2026-11-13T02:00:00.000Z', nextTrafficAt: null, traffic: null,
   incidents: { total: 0, byCategory: { accident: 0, breakdown: 0, weather: 0, construction: 0, report: 0, other: 0 } },
-  delayMinutes: 60, intervalMinutes: 60,
+  delayMinutes: 60, intervalMinutes: 60, collectedAt: null,
 });
 
 test('24-hour insights load on mount and again when the traffic snapshot changes', async () => {
   snapshots.push(() => ok(snap(1)));
   insights = () => ok({
     buckets: [{ dataAt: '2026-11-13T01:00:00.000Z', avgSpeed: 77.6, ok: 9, slow: 2, jam: 1, jamKm: 1 }],
-    routes: [], incidentsByHour: [], delayMinutes: 60, intervalMinutes: 60,
+    routes: [], incidentsByHour: [], delayMinutes: 60, intervalMinutes: 60, collectedAt: null,
   });
   await mount();
   const insightCalls = () => fetchMock.mock.calls.map(([p]) => String(p)).filter((p) => p.startsWith('/api/insights'));
@@ -402,11 +403,24 @@ test('a failed insights refetch keeps the last history', async () => {
   snapshots.push(() => ok(snap(1)));
   insights = () => ok({
     buckets: [{ dataAt: '2026-11-13T01:00:00.000Z', avgSpeed: 80, ok: 9, slow: 2, jam: 1, jamKm: 1 }],
-    routes: [], incidentsByHour: [], delayMinutes: 60, intervalMinutes: 60,
+    routes: [], incidentsByHour: [], delayMinutes: 60, intervalMinutes: 60, collectedAt: null,
   });
   await mount();
   insights = fail;
   act(() => useMetrics.getState().apply(metricsFor(9)));
   await flush();
   expect(document.querySelector('.speed .hero')?.textContent).toBe('80km/h');
+});
+
+test('the top bar follows collectedAt from SSE metrics and never goes back to an older one', async () => {
+  vi.setSystemTime(new Date('2026-11-13T17:30:00+09:00'));
+  snapshots.push(() => ok({ ...snap(1), collectedAt: '2026-11-13T17:05:00+09:00' }));
+  await mount();
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+  const label = () => document.querySelector('.collected')?.textContent ?? '';
+  expect(label()).toContain('17:05');
+  await push({ ...metrics(1), collectedAt: '2026-11-13T17:20:00+09:00' });
+  expect(label()).toBe('마지막 수집 17:20');
+  await push({ ...metrics(1), collectedAt: '2026-11-13T17:00:00+09:00' });
+  expect(label()).toBe('마지막 수집 17:05');
 });

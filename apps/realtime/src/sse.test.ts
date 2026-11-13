@@ -14,6 +14,7 @@ const base: Metrics = {
   incidents: { total: 0, byCategory: { accident: 0, breakdown: 0, weather: 0, construction: 0, report: 0, other: 0 } },
   delayMinutes: 60,
   intervalMinutes: 60,
+  collectedAt: null,
 };
 
 /** 테스트용 지표 상태: set 으로 값을 바꾸면 구독자에게 알린다. */

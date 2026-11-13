@@ -5,6 +5,8 @@ export interface MetricsLoad {
   shown: TrafficSnapshotRow | null;
   upcoming: TrafficSnapshotRow[];
   incidents: Metrics['incidents'];
+  /** 마지막으로 성공한 수집 시각. 기록이 없으면 null. */
+  collectedAt?: Date | null;
 }
 
 export interface MetricsDeps {
@@ -62,6 +64,7 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
   let upcoming: TrafficSnapshotRow[] = [];
   let byCategory = countsFrom();
   let total = 0;
+  let collectedAt: string | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** reload · stop 마다 바뀐다. 조회 중에 바뀌었으면 그 결과는 버린다. */
   let generation = 0;
@@ -84,6 +87,7 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
       incidents: { total, byCategory: { ...byCategory } },
       delayMinutes: deps.timing.delayMinutes,
       intervalMinutes: deps.timing.intervalMinutes,
+      collectedAt,
     };
   }
 
@@ -147,6 +151,7 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
       .sort((a, b) => a.showAt.getTime() - b.showAt.getTime());
     byCategory = countsFrom(data.incidents.byCategory);
     total = data.incidents.total;
+    collectedAt = data.collectedAt ? data.collectedAt.toISOString() : null;
     lastLoadAtMs = buffer.at;
     // 조회 기준 시각 이후에 송출된 것은 DB 값에 아직 없으니 다시 더한다. 그 전 것은 이미 들어 있다.
     for (const e of buffer.events) if (isNew(e)) applyEvent(e);

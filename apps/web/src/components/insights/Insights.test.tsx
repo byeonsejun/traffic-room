@@ -42,7 +42,7 @@ const metrics = (over: Partial<Metrics> = {}): Metrics => ({
   trafficSnapshotId: 7, trafficDataAt: hourAt(0), nextTrafficAt: new Date(NOW + 18 * 60_000 + 30_000).toISOString(),
   traffic: { avgSpeed: 83.6, ok: 5610, slow: 2671, jam: 683, jamKm: 312.4 },
   incidents: { total: 41, byCategory: { accident: 5, breakdown: 23, weather: 0, construction: 9, report: 4, other: 0 } },
-  delayMinutes: 60, intervalMinutes: 60,
+  delayMinutes: 60, intervalMinutes: 60, collectedAt: null,
   ...over,
 });
 

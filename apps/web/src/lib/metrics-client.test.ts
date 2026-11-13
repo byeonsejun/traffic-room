@@ -36,6 +36,7 @@ const metrics: Metrics = {
   incidents: { total: 2, byCategory: { accident: 1, breakdown: 0, weather: 0, construction: 1, report: 0, other: 0 } },
   delayMinutes: 60,
   intervalMinutes: 60,
+  collectedAt: null,
 };
 
 let onMetrics: Mock<(m: Metrics) => void>;
