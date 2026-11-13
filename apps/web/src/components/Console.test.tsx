@@ -10,8 +10,14 @@ vi.hoisted(() => {
   process.env.NEXT_PUBLIC_REALTIME_URL = 'ws://rt.test/ws';
 });
 
-// 지도는 WebGL 이 필요해 jsdom 에서 띄우지 않는다.
-vi.mock('./MapView', () => ({ MapView: () => null }));
+// 지도는 WebGL 이 필요해 jsdom 에서 띄우지 않는다. 받은 교통 값만 기록한다.
+const mapProps: Array<{ speeds: Map<string, number> | null; trafficDataAt: string | null; trafficError: boolean }> = [];
+vi.mock('./MapView', () => ({
+  MapView: (p: (typeof mapProps)[number]) => {
+    mapProps.push(p);
+    return null;
+  },
+}));
 
 const clients: Array<{ opts: RealtimeClientOptions; close: ReturnType<typeof vi.fn>; lastIdAtConnect: number }> = [];
 vi.mock('@/lib/realtime-client', () => ({
@@ -38,9 +44,11 @@ const hello = (latestId: number): ServerMessage => ({
 });
 
 let snapshots: Array<() => Response>;
+let traffic: () => Response;
 const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
   const path = String(input);
   if (path === '/api/cctvs') return ok([]);
+  if (path === '/api/traffic') return traffic();
   const next = snapshots.shift();
   if (!next) throw new Error('unexpected snapshot fetch');
   return next();
@@ -58,7 +66,9 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockClear();
   clients.length = 0;
+  mapProps.length = 0;
   snapshots = [];
+  traffic = () => ok({ id: null });
   useConsole.setState(useConsole.getInitialState(), true);
 });
 afterEach(() => {
@@ -143,4 +153,33 @@ test('a fresh construction arrival does not bump the count, an accident does', a
   expect(document.querySelector('.count')!.classList.contains('is-bump')).toBe(false);
   arrive(2, 'accident');
   expect(document.querySelector('.count')!.classList.contains('is-bump')).toBe(true);
+});
+
+test('traffic speeds are fetched once and handed to the map', async () => {
+  snapshots.push(() => ok(snap(1)));
+  traffic = () => ok({ id: 7, dataAt: '2026-11-13T02:00:00.000Z', nextShowAt: null, speeds: [['A', 75], ['B', 12]] });
+  await mount();
+  expect(fetchMock.mock.calls.filter(([p]) => p === '/api/traffic')).toHaveLength(1);
+  const last = mapProps.at(-1)!;
+  expect(last.speeds).toEqual(new Map([['A', 75], ['B', 12]]));
+  expect(last.trafficDataAt).toBe('2026-11-13T02:00:00.000Z');
+  expect(last.trafficError).toBe(false);
+});
+
+test('a failed traffic fetch leaves only base lines and flags the error', async () => {
+  snapshots.push(() => ok(snap(1)));
+  traffic = fail;
+  await mount();
+  const last = mapProps.at(-1)!;
+  expect(last.speeds).toBeNull();
+  expect(last.trafficDataAt).toBeNull();
+  expect(last.trafficError).toBe(true);
+});
+
+test('with no traffic snapshot yet the map gets no speeds and no error', async () => {
+  snapshots.push(() => ok(snap(1)));
+  await mount();
+  const last = mapProps.at(-1)!;
+  expect(last.speeds).toBeNull();
+  expect(last.trafficError).toBe(false);
 });

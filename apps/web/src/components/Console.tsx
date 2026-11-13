@@ -27,6 +27,12 @@ async function load<T>(path: string, signal: AbortSignal): Promise<T> {
 
 type NoticeSource = 'cctvs' | 'snapshot';
 
+type TrafficResponse =
+  | { id: number; dataAt: string; nextShowAt: string | null; speeds: [string, number][] }
+  | { id: null };
+type Traffic = { speeds: Map<string, number> | null; dataAt: string | null; error: boolean };
+const NO_TRAFFIC: Traffic = { speeds: null, dataAt: null, error: false };
+
 export function Console() {
   const status = useConsole((s) => s.status);
   const retryInMs = useConsole((s) => s.retryInMs);
@@ -36,6 +42,8 @@ export function Console() {
   const [collectedAt, setCollectedAt] = useState<string | null>(null);
   // 스냅샷이 오기 전에는 기본 지연(60분)으로 보여 준다.
   const [delayMinutes, setDelayMinutes] = useState(60);
+  // 교통 속도는 처음 한 번 받는다. 실패하면 지도는 바탕선만 그리고 범례가 알린다.
+  const [traffic, setTraffic] = useState<Traffic>(NO_TRAFFIC);
   const [notices, setNotices] = useState<Partial<Record<NoticeSource, string>>>({});
   const client = useRef<ReturnType<typeof createRealtimeClient> | null>(null);
   const send = useCallback((m: ClientMessage) => client.current?.send(m), []);
@@ -59,6 +67,12 @@ export function Console() {
       });
 
     load<Cctv[]>('/api/cctvs', ac.signal).then((c) => live && setCctvs(c), (e) => note('cctvs', e));
+    load<TrafficResponse>('/api/traffic', ac.signal).then(
+      (t) => live && setTraffic(t.id === null ? NO_TRAFFIC : { speeds: new Map(t.speeds), dataAt: t.dataAt, error: false }),
+      (e: unknown) => {
+        if (live && !(e instanceof Error && e.name === 'AbortError')) setTraffic({ ...NO_TRAFFIC, error: true });
+      },
+    );
 
     const connect = () => {
       if (!live || !REALTIME_URL) return;
@@ -123,7 +137,7 @@ export function Console() {
         <StatsPanel arrivalId={arrivalId} collectedAt={collectedAt} />
       </aside>
       <main className="map">
-        <MapView />
+        <MapView speeds={traffic.speeds} trafficDataAt={traffic.dataAt} trafficError={traffic.error} />
         {Object.keys(notices).length > 0 && (
           <div className="notices" role="alert">
             {[...new Set(Object.values(notices))].map((n) => <p key={n}>{n}</p>)}
