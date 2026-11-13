@@ -10,12 +10,14 @@
     <string>/bin/bash</string>
     <string>__REPO__/scripts/collect-local.sh</string>
   </array>
-  <!-- 매시 5분. Mac 이 잠든 사이 놓친 실행은 깨어난 뒤 한 번만 돈다. 15분 간격은 docs/deploy.md 참고. -->
+  <!-- 15분마다(5, 20, 35, 50분). ITS 월 한도 3,000건 승인(2026-11-13) 뒤 바꿈. Mac 이 잠든 사이 놓친 실행은 깨어난 뒤 한 번만 돈다. -->
   <key>StartCalendarInterval</key>
-  <dict>
-    <key>Minute</key>
-    <integer>5</integer>
-  </dict>
+  <array>
+    <dict><key>Minute</key><integer>5</integer></dict>
+    <dict><key>Minute</key><integer>20</integer></dict>
+    <dict><key>Minute</key><integer>35</integer></dict>
+    <dict><key>Minute</key><integer>50</integer></dict>
+  </array>
   <key>RunAtLoad</key>
   <false/>
   <key>StandardOutPath</key>
