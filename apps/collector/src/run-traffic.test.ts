@@ -62,6 +62,19 @@ describe('runTraffic', () => {
     expect(traffic).not.toHaveBeenCalled();
   });
 
+  test('정리가 실패해도 저장과 ok 기록은 그대로', async () => {
+    const real = await createTestDb();
+    const db: Db = { query: (t, p) => real.query(t, p), batch: async () => { throw Object.assign(new Error('x'), { code: 'PRUNE' }); } };
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await runTraffic({ db, its: itsOf(async () => fetchOf(10)), now, timing, highways });
+    expect(r.status).toBe('ok');
+    expect(err).toHaveBeenCalledWith('traffic prune failed code=PRUNE');
+    err.mockRestore();
+    expect(await count(real, 'traffic_snapshots')).toBe(1);
+    expect(await count(real, 'collector_runs')).toBe(1);
+    expect(await count(real, 'collector_runs where ok')).toBe(1);
+  });
+
   test('ITS 오류는 failed 로 남기고 DB 는 그대로', async () => {
     const db = await createTestDb();
     const r = await runTraffic({ db, its: itsOf(async () => { throw Object.assign(new Error('x'), { code: 'ITS_RESULT' }); }), now, timing, highways });

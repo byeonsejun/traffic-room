@@ -20,7 +20,12 @@ export async function runEvents({ db, its, now, timing }: RunDeps): Promise<Even
     const plan = planIncidentChanges({ activeKeys, fetched, collectedAt, prevCollectedAt: prev, delayMinutes: timing.delayMinutes });
     await applyIncidentPlan(db, plan, collectedAt);
     await recordRun(db, 'events', true, fetched.length, collectedAt);
-    await pruneHistory(db, collectedAt);
+    // 정리 실패는 수집 성공을 뒤집지 않는다. 다음 실행에서 다시 정리된다.
+    try {
+      await pruneHistory(db, collectedAt);
+    } catch (e) {
+      console.error('events prune failed code=' + errorCode(e));
+    }
     return { status: 'ok', arrived: plan.arriving.length, cleared: plan.cleared.length };
   } catch (e) {
     await recordRun(db, 'events', false, 0, collectedAt);

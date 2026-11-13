@@ -90,6 +90,18 @@ describe('runEvents', () => {
     expect(await db.query("select 1 from event_log where incident_key = 'gone'")).toHaveLength(0);
   });
 
+  test('a prune failure does not add a failed run row', async () => {
+    const real = await createTestDb();
+    const db: Db = { query: (t, p) => real.query(t, p), batch: (st) => (st.some((x) => x.text.includes('collector_runs')) ? Promise.reject(Object.assign(new Error('x'), { code: 'PRUNE' })) : real.batch(st)) };
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await runEvents({ db, its: fakeIts({ events: vi.fn().mockResolvedValue([inc('a')]) }), timing, now: () => at('22:05') });
+    expect(r.status).toBe('ok');
+    expect(err).toHaveBeenCalledWith('events prune failed code=PRUNE');
+    err.mockRestore();
+    expect(await real.query('select 1 from collector_runs')).toHaveLength(1);
+    expect(await failedRuns(real)).toBe(0);
+  });
+
   test('skips when the configured monthly limit is reached', async () => {
     const db = await createTestDb();
     for (let i = 0; i < 3; i++) await recordRun(db, 'events', true, 1, new Date(at('00:00').getTime() + i * 1000));

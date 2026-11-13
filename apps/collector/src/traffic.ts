@@ -7,12 +7,14 @@ export type RejectReason = 'result' | 'multi-time' | 'not-newer' | 'too-few' | '
 
 /** 도로 모양(hw)에 있는 본선 구간만 남긴다. */
 export function pickHighways(fetch: TrafficFetch, hw: HighwaysIndex): { speeds: LinkSpeed[]; missing: number; unknown: number } {
-  const speeds: LinkSpeed[] = [];
+  // 같은 구간 번호가 겹치면 마지막 값을 쓴다(link_speeds 기본키 충돌과 음수 missing 방지).
+  const kept = new Map<string, number>();
   let unknown = 0;
   for (const it of fetch.items) {
-    if (hw.get(it.linkId)) speeds.push({ linkId: it.linkId, speed: it.speed });
+    if (hw.get(it.linkId)) kept.set(it.linkId, it.speed);
     else if (it.roadName.includes('고속도로')) unknown++;
   }
+  const speeds = [...kept].map(([linkId, speed]) => ({ linkId, speed }));
   return { speeds, missing: hw.size - speeds.length, unknown };
 }
 

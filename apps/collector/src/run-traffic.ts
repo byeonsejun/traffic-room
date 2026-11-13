@@ -29,8 +29,13 @@ export async function runTraffic({ db, its, now, timing, highways }: RunDeps & {
     const { summary, routes } = summarize(speeds, highways);
     const showAt = new Date(v.dataAt.getTime() + timing.delayMinutes * 60_000);
     await saveTrafficSnapshot(db, { dataAt: v.dataAt, collectedAt, showAt, summary, routes, speeds });
-    await pruneTraffic(db, collectedAt);
     await recordRun(db, 'traffic', true, speeds.length, collectedAt);
+    // 정리 실패는 수집 성공을 뒤집지 않는다. 다음 실행에서 다시 정리된다.
+    try {
+      await pruneTraffic(db, collectedAt);
+    } catch (e) {
+      console.error('traffic prune failed code=' + errorCode(e));
+    }
     return { status: 'ok', links: speeds.length, missing, unknown, dataAt: v.dataAt };
   } catch (e) {
     await recordRun(db, 'traffic', false, 0, collectedAt);

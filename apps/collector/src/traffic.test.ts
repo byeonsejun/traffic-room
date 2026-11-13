@@ -80,4 +80,18 @@ describe('pickHighways', () => {
     expect(r.speeds).toEqual([{ linkId: 'a', speed: 80 }]);
     expect(r).toMatchObject({ missing: 2, unknown: 2 });
   });
+
+  test('같은 구간 번호가 두 번 오면 마지막 값 하나만 남긴다', () => {
+    const hw = hwOf([['a', '경부선', 1000], ['b', '경부선', 1000]]);
+    const f: TrafficFetch = {
+      dataAt: [AT],
+      items: [
+        { linkId: 'a', roadName: '경부고속도로', speed: 80 },
+        { linkId: 'a', roadName: '경부고속도로', speed: 30 },
+      ],
+    };
+    const r = pickHighways(f, hw);
+    expect(r.speeds).toEqual([{ linkId: 'a', speed: 30 }]);
+    expect(r.missing).toBe(1);
+  });
 });
