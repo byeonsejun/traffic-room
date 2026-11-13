@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import type { Metrics, ServerMessage } from '@traffic-room/shared';
+import type { MetricsClientOptions } from '@/lib/metrics-client';
 import type { RealtimeClientOptions } from '@/lib/realtime-client';
 import { useConsole, type Snapshot } from '@/store/console';
 import { useMetrics } from '@/store/metrics';
@@ -29,7 +30,6 @@ vi.mock('@/lib/realtime-client', () => ({
   },
 }));
 
-type MetricsClientOptions = { url: string; onMetrics: (m: Metrics) => void; onStatus: (s: 'open' | 'retry') => void };
 const streams: Array<{ opts: MetricsClientOptions; close: ReturnType<typeof vi.fn> }> = [];
 vi.mock('@/lib/metrics-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/metrics-client')>()),
@@ -344,4 +344,25 @@ test('the top bar shows the time of the speeds on screen and goes stale', async 
   await mount();
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(document.querySelector('.top .traffic-at.stale')?.textContent).toContain('교통 11:59 기준');
+});
+
+test('an older snapshot in a response never replaces newer speeds on screen', async () => {
+  snapshots.push(() => ok(snap(1)));
+  // 화면에는 3, 지표가 4 를 가리키는데 응답은 (늦은 캐시로) 2 가 온다.
+  const replies = [() => ok(trafficBody(3, [['A', 75]])), () => ok(trafficBody(2, [['A', 10]]))];
+  traffic = () => (replies.shift() ?? (() => ok(trafficBody(2, [['A', 10]]))))();
+  await mount();
+  await push(metrics(4));
+  expect(trafficCalls().length).toBeGreaterThanOrEqual(2);
+  expect(mapProps.at(-1)!.speeds).toEqual(new Map([['A', 75]]));
+});
+
+test('metrics naming an older snapshot than the one shown do not refetch', async () => {
+  snapshots.push(() => ok(snap(1)));
+  traffic = () => ok(trafficBody(3, [['A', 75]]));
+  await mount();
+  await push(metrics(2));
+  await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60_000); });
+  expect(trafficCalls()).toHaveLength(1);
+  expect(mapProps.at(-1)!.speeds).toEqual(new Map([['A', 75]]));
 });

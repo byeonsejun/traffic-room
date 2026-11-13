@@ -65,8 +65,7 @@ function setSetOpacity(map: MlMap, set: SpeedSet, visible: boolean) {
 function addHighwayLayers(map: MlMap, file: HighwaysFile, still: boolean) {
   const fade = fadeFor(still);
   const empty = { type: 'FeatureCollection' as const, features: [] };
-  map.addSource(HW_SOURCE, { type: 'geojson', data: empty });
-  (map.getSource(HW_SOURCE) as GeoJSONSource).setData(highwaysGeoJson(file, null));
+  map.addSource(HW_SOURCE, { type: 'geojson', data: highwaysGeoJson(file, null) });
   const add = (source: string, layer: Record<string, unknown>) =>
     map.addLayer({ source, type: 'line', ...layer } as Parameters<MlMap['addLayer']>[0], 'incidents-halo');
   add(HW_SOURCE, {
@@ -310,6 +309,8 @@ export function MapView({ speeds, trafficDataAt, trafficError }: Props) {
     (map.getSource(speedSource(next)) as GeoJSONSource | undefined)?.setData(speedGeoJson(file, speeds));
     // 레이어를 막 추가하거나 데이터를 막 바꾼 같은 틱에 올리면 전환 없이 바로 켜지거나 빈 타일이 비치므로,
     // 새 데이터가 타일로 다 만들어진 뒤에 두 벌의 불투명도를 맞바꾼다(reduced motion 이면 바로 바뀐다).
+    // 1.5초 전환이 끝나기 전에 또 갱신이 오면(시간당 한 번이라 거의 없다) 사라지던 벌에 새 속도를 쓰고,
+    // 그 벌이 지금 불투명도에서 다시 떠오른다. 색은 맞지만 그 한 번은 매끄럽지 않을 수 있다.
     const swap = (e: MapSourceDataEvent) => {
       if (e.sourceId !== speedSource(next) || !e.isSourceLoaded) return;
       map.off('sourcedata', swap);

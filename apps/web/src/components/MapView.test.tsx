@@ -17,7 +17,7 @@ const h = vi.hoisted(() => {
     handlers = new Map<string, Handler>();
     layers: Layer[] = [];
     before = new Map<string, string | undefined>();
-    sources = new Map<string, { setData: ReturnType<typeof vi.fn> }>();
+    sources = new Map<string, { setData: ReturnType<typeof vi.fn>; data?: unknown }>();
     easeTo = vi.fn();
     jumpTo = vi.fn();
     setPaintProperty = vi.fn();
@@ -35,8 +35,8 @@ const h = vi.hoisted(() => {
       else this.handlers.set(`${event}:${String(a)}`, b as Handler);
     }
     addControl() {}
-    addSource(id: string) {
-      this.sources.set(id, { setData: vi.fn() });
+    addSource(id: string, spec?: { data?: unknown }) {
+      this.sources.set(id, { setData: vi.fn(), data: spec?.data });
     }
     addLayer(l: Layer, beforeId?: string) {
       this.layers.push(l);
@@ -209,7 +209,10 @@ test('highway lines stack base → two speed sets (glow → speed → flow), all
   expect(hw).toEqual(['hw-base', ...set('a'), ...set('b')]);
   for (const id of hw) expect(map.before.get(id)).toBe('incidents-halo');
   // 바탕선은 모든 구간을 한 번만 받는다.
-  expect(featureProps(map, 'highways')).toEqual([{ s: null, lv: null }, { s: null, lv: null }]);
+  const base = map.getSource('highways')!;
+  expect((base.data as { features: Array<{ properties: unknown }> }).features.map((f) => f.properties))
+    .toEqual([{ s: null, lv: null }, { s: null, lv: null }]);
+  expect(base.setData).not.toHaveBeenCalled();
   expect(map.getLayer('hw-b-flow-3')!.filter).toEqual(['==', ['get', 'lv'], 3]);
   expect(map.getLayer('hw-a-speed')!.paint['line-opacity']).toBe(0);
   expect(map.getLayer('hw-a-speed')!.paint['line-opacity-transition']).toEqual({ duration: 1500, delay: 0 });
