@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 국내 회선의 Mac 에서 ITS 수집을 돌린다. launchd 가 매시 5분에 부른다(docs/deploy.md).
-#   scripts/collect-local.sh            events 수집, 0/8/16시에는 cctvs 도 수집
+#   scripts/collect-local.sh            events 와 traffic 수집, 0/8/16시에는 cctvs 도 수집
 #   scripts/collect-local.sh --cctvs    시각과 상관없이 cctvs 도 수집
+#   scripts/collect-local.sh --traffic  traffic 의 최근 실행 기록(스탬프)만 무시하고 수집
 #   scripts/collect-local.sh --force    잠금은 지키되 최근 실행 기록(스탬프)은 무시하고 모두 돌림
 #   scripts/collect-local.sh --dry-run  경로·PATH·환경 파일·중복 실행 방지를 점검만 하고 pnpm 은 돌리지 않음
 # 키와 접속 문자열은 값을 어디에도 출력하지 않는다. 변수 이름만 확인한다.
@@ -9,21 +10,23 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ITS_ENV="$HOME/.its-api.env"
-DB_ENV="$REPO/.env"
+# 점검용으로 다른 환경 파일을 가리킬 수 있다(운영에서는 지정하지 않는다).
+DB_ENV="${TRAFFIC_ROOM_DB_ENV:-$REPO/.env}"
 LOG="$HOME/Library/Logs/traffic-room-collector.log"
 NODE_BIN="$HOME/.nvm/versions/node/v24.15.0/bin"
 STATE_DIR="${TRAFFIC_ROOM_STATE_DIR:-$HOME/Library/Application Support/traffic-room}"
 LOCK_DIR="$STATE_DIR/collect.lock"
 LOCK_STALE_MIN=30
-EVENTS_MIN_GAP_SEC=600
 
 WITH_CCTVS=0
 FORCE_CCTVS=0
+FORCE_TRAFFIC=0
 FORCE=0
 DRY_RUN=0
 for arg in "$@"; do
   case "$arg" in
     --cctvs) WITH_CCTVS=1; FORCE_CCTVS=1 ;;
+    --traffic) FORCE_TRAFFIC=1 ;;
     --force) FORCE=1 ;;
     --dry-run) DRY_RUN=1 ;;
     *) echo "알 수 없는 인자: $arg" >&2; exit 2 ;;
@@ -68,9 +71,19 @@ DATABASE_URL="$(read_var "$DB_ENV" DATABASE_URL)"
 [ -n "$ITS_API_KEY" ] || fail "$ITS_ENV 에 ITS_API_KEY 값이 없다."
 [ -n "$DATABASE_URL" ] || fail "$DB_ENV 에 DATABASE_URL 값이 없다."
 
+# 수집 간격(분)·지연(분)·월 한도는 .env 에 있으면 수집기에 그대로 넘기고, 없으면 수집기 기본값(60/60/950)을 쓴다.
+# 양의 정수가 아닌 값은 무시한다.
+for name in COLLECT_INTERVAL_MINUTES DELAY_MINUTES ITS_MONTHLY_LIMIT; do
+  value="$(read_var "$DB_ENV" "$name")"
+  if [[ "$value" =~ ^[1-9][0-9]*$ ]]; then export "$name=$value"; fi
+done
+INTERVAL_MIN="${COLLECT_INTERVAL_MINUTES:-60}"
+# 같은 회차를 두 번 돌지 않도록 하는 최소 간격은 수집 간격의 절반이다. 잠자기 뒤 따라잡는 실행이 정각 실행과 겹치는 것만 막는다.
+MIN_GAP_SEC=$((INTERVAL_MIN * 60 / 2))
+
 HOUR=$((10#$(date +%H)))
 if [ "$HOUR" -eq 0 ] || [ "$HOUR" -eq 8 ] || [ "$HOUR" -eq 16 ]; then WITH_CCTVS=1; fi
-JOBS=(events)
+JOBS=(events traffic)
 if [ "$WITH_CCTVS" -eq 1 ]; then JOBS+=(cctvs); fi
 
 # 같은 시각에 두 번 도는 것을 막는다. launchd 가 잠자기 뒤 따라잡는 실행과 정각 5분 실행이 겹칠 수 있다.
@@ -83,12 +96,13 @@ should_skip() {
   [ "$FORCE" -eq 1 ] && return 1
   [ -f "$f" ] || return 1
   case "$job" in
-    events)
+    events|traffic)
+      [ "$job" = traffic ] && [ "$FORCE_TRAFFIC" -eq 1 ] && return 1
       local last now
       last="$(cat "$f" 2>/dev/null || echo 0)"
       now="$(date +%s)"
       [[ "$last" =~ ^[0-9]+$ ]] || return 1
-      [ $((now - last)) -lt "$EVENTS_MIN_GAP_SEC" ] ;;
+      [ $((now - last)) -lt "$MIN_GAP_SEC" ] ;;
     cctvs)
       [ "$FORCE_CCTVS" -eq 1 ] && return 1
       [ "$(cat "$f" 2>/dev/null || true)" = "$(cctvs_window)" ] ;;
@@ -97,7 +111,7 @@ should_skip() {
 
 write_stamp() {
   case "$1" in
-    events) date +%s > "$(stamp_file events)" ;;
+    events|traffic) date +%s > "$(stamp_file "$1")" ;;
     cctvs) cctvs_window > "$(stamp_file cctvs)" ;;
   esac
 }
@@ -125,6 +139,8 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo "[dry-run] PATH:  $PATH"
   echo "[dry-run] $ITS_ENV: ITS_API_KEY 있음 (값은 출력하지 않음)"
   echo "[dry-run] $DB_ENV: DATABASE_URL 있음 (값은 출력하지 않음)"
+  echo "[dry-run] 수집 간격 ${INTERVAL_MIN}분, 지연 ${DELAY_MINUTES:-기본값(60)}분, 월 한도 ${ITS_MONTHLY_LIMIT:-기본값(950)}"
+  echo "[dry-run] 최소 간격(MIN_GAP_SEC): ${MIN_GAP_SEC}초"
   echo "[dry-run] 상태 디렉터리: $STATE_DIR"
   if [ -d "$LOCK_DIR" ]; then echo "[dry-run] 잠금: 잡혀 있음 (실행 시 SKIP locked)"; else echo "[dry-run] 잠금: 비어 있음"; fi
   echo "[dry-run] 지금 ${HOUR}시, 후보 작업: ${JOBS[*]}, 실제로 돌 작업: ${RUN_JOBS[*]:-없음}"
