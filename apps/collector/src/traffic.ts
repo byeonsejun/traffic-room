@@ -5,31 +5,39 @@ import type { TrafficFetch } from '@traffic-room/its';
 export type LinkSpeed = { linkId: string; speed: number };
 export type RejectReason = 'result' | 'multi-time' | 'not-newer' | 'too-few' | 'bad-speed' | 'too-many-zero';
 
-/** 도로 모양(hw)에 있는 본선 구간만 남긴다. */
-export function pickHighways(fetch: TrafficFetch, hw: HighwaysIndex): { speeds: LinkSpeed[]; missing: number; unknown: number } {
+/**
+ * 도로 모양(hw)에 있는 본선 구간만 남긴다. dataAt 은 남긴 구간 항목들의 서로 다른 기준 시각(오름차순)이다.
+ * 국도 등 버린 구간의 시각은 섞지 않는다.
+ */
+export function pickHighways(
+  fetch: TrafficFetch, hw: HighwaysIndex,
+): { speeds: LinkSpeed[]; dataAt: string[]; missing: number; unknown: number } {
   // 같은 구간 번호가 겹치면 마지막 값을 쓴다(link_speeds 기본키 충돌과 음수 missing 방지).
   const kept = new Map<string, number>();
+  const dataAt = new Set<string>();
   let unknown = 0;
   for (const it of fetch.items) {
-    if (hw.get(it.linkId)) kept.set(it.linkId, it.speed);
-    else if (it.roadName.includes('고속도로')) unknown++;
+    if (hw.get(it.linkId)) {
+      kept.set(it.linkId, it.speed);
+      if (it.dataAt) dataAt.add(it.dataAt);
+    } else if (it.roadName.includes('고속도로')) unknown++;
   }
   const speeds = [...kept].map(([linkId, speed]) => ({ linkId, speed }));
-  return { speeds, missing: hw.size - speeds.length, unknown };
+  return { speeds, dataAt: [...dataAt].sort(), missing: hw.size - speeds.length, unknown };
 }
 
-/** 저장해도 되는 응답인지 메모리에서 먼저 검증한다. */
+/** 저장해도 되는 응답인지 메모리에서 먼저 검증한다. dataAt 은 pickHighways 가 준 남긴 구간의 기준 시각들. */
 export function validateTraffic(input: {
-  fetch: TrafficFetch;
+  dataAt: string[];
   speeds: LinkSpeed[];
   prev: { dataAt: Date; linkCount: number } | null;
   hwSize: number;
 }): { ok: true; dataAt: Date } | { ok: false; reason: RejectReason } {
-  const { fetch, speeds, prev, hwSize } = input;
+  const { speeds, prev, hwSize } = input;
   // resultCode 오류는 normalizeTraffic 이 던진다. 여기서는 쓸 수 있는 구간이 하나도 없는 응답을 막는다.
-  if (fetch.items.length === 0 || speeds.length === 0) return { ok: false, reason: 'result' };
-  if (fetch.dataAt.length !== 1) return { ok: false, reason: 'multi-time' };
-  const dataAt = new Date(fetch.dataAt[0]!);
+  if (speeds.length === 0) return { ok: false, reason: 'result' };
+  if (input.dataAt.length !== 1) return { ok: false, reason: 'multi-time' };
+  const dataAt = new Date(input.dataAt[0]!);
   if (Number.isNaN(dataAt.getTime())) return { ok: false, reason: 'multi-time' };
   if (prev && dataAt.getTime() <= prev.dataAt.getTime()) return { ok: false, reason: 'not-newer' };
   if (speeds.some((s) => s.speed < 0 || s.speed > 200)) return { ok: false, reason: 'bad-speed' };

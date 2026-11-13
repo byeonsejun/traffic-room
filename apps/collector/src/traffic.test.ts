@@ -8,15 +8,11 @@ const hwOf = (entries: [string, string, number][], size = entries.length): Highw
   return { size, get: (id) => m.get(id) };
 };
 const AT = '2026-11-13T01:00:00.000Z';
-const fetchOf = (speeds: number[], dataAt = [AT]): TrafficFetch => ({
-  dataAt,
-  items: speeds.map((speed, i) => ({ linkId: `L${i}`, roadName: '경부고속도로', speed })),
-});
-const asSpeeds = (f: TrafficFetch) => f.items.map(({ linkId, speed }) => ({ linkId, speed }));
-const run = (speeds: number[], over: Partial<Parameters<typeof validateTraffic>[0]> = {}, dataAt = [AT]) => {
-  const fetch = fetchOf(speeds, dataAt);
-  return validateTraffic({ fetch, speeds: asSpeeds(fetch), prev: null, hwSize: speeds.length, ...over });
-};
+const T2 = '2026-11-13T02:00:00.000Z';
+const item = (linkId: string, roadName: string, speed: number, dataAt: string | null = AT) => ({ linkId, roadName, speed, dataAt });
+const asSpeeds = (speeds: number[]) => speeds.map((speed, i) => ({ linkId: `L${i}`, speed }));
+const run = (speeds: number[], over: Partial<Parameters<typeof validateTraffic>[0]> = {}, dataAt = [AT]) =>
+  validateTraffic({ dataAt, speeds: asSpeeds(speeds), prev: null, hwSize: speeds.length, ...over });
 const prev = (linkCount: number) => ({ dataAt: new Date('2026-11-13T00:00:00.000Z'), linkCount });
 
 describe('summarize', () => {
@@ -44,12 +40,12 @@ describe('validateTraffic', () => {
     expect(run(Array(300).fill(80), { hwSize: 1000 })).toMatchObject({ ok: true });
   });
   test('기준 시각이 둘이면 multi-time', () => {
-    expect(run([80, 80], {}, [AT, '2026-11-13T02:00:00.000Z'])).toEqual({ ok: false, reason: 'multi-time' });
+    expect(run([80, 80], {}, [AT, T2])).toEqual({ ok: false, reason: 'multi-time' });
+    expect(run([80, 80], {}, [])).toEqual({ ok: false, reason: 'multi-time' });
   });
   test('직전과 같거나 오래된 시각이면 not-newer', () => {
-    const fetch = fetchOf([80]);
     const same = { dataAt: new Date(AT), linkCount: 1 };
-    expect(validateTraffic({ fetch, speeds: asSpeeds(fetch), prev: same, hwSize: 1 })).toEqual({ ok: false, reason: 'not-newer' });
+    expect(validateTraffic({ dataAt: [AT], speeds: asSpeeds([80]), prev: same, hwSize: 1 })).toEqual({ ok: false, reason: 'not-newer' });
   });
   test('범위 밖 속도는 bad-speed', () => {
     expect(run([80, 250])).toEqual({ ok: false, reason: 'bad-speed' });
@@ -70,10 +66,10 @@ describe('pickHighways', () => {
     const f: TrafficFetch = {
       dataAt: [AT],
       items: [
-        { linkId: 'a', roadName: '경부고속도로', speed: 80 },
-        { linkId: 'x1', roadName: '경부고속도로', speed: 80 },
-        { linkId: 'x2', roadName: '영동고속도로', speed: 80 },
-        { linkId: 'n1', roadName: '국도1호선', speed: 80 },
+        item('a', '경부고속도로', 80),
+        item('x1', '경부고속도로', 80),
+        item('x2', '영동고속도로', 80),
+        item('n1', '국도1호선', 80),
       ],
     };
     const r = pickHighways(f, hw);
@@ -86,12 +82,31 @@ describe('pickHighways', () => {
     const f: TrafficFetch = {
       dataAt: [AT],
       items: [
-        { linkId: 'a', roadName: '경부고속도로', speed: 80 },
-        { linkId: 'a', roadName: '경부고속도로', speed: 30 },
+        item('a', '경부고속도로', 80),
+        item('a', '경부고속도로', 30),
       ],
     };
     const r = pickHighways(f, hw);
     expect(r.speeds).toEqual([{ linkId: 'a', speed: 30 }]);
     expect(r.missing).toBe(1);
+  });
+
+  test('기준 시각은 남긴 본선 구간의 것만 본다: 국도 구간의 다른 시각은 multi-time 이 아니다', () => {
+    const hw = hwOf([['a', '경부선', 1000], ['b', '경부선', 1000]]);
+    const f: TrafficFetch = {
+      dataAt: [AT, T2],
+      items: [item('a', '경부고속도로', 80), item('b', '경부고속도로', 70), item('n1', '국도1호선', 50, T2)],
+    };
+    const r = pickHighways(f, hw);
+    expect(r.dataAt).toEqual([AT]);
+    expect(validateTraffic({ dataAt: r.dataAt, speeds: r.speeds, prev: null, hwSize: 2 })).toEqual({ ok: true, dataAt: new Date(AT) });
+  });
+
+  test('남긴 본선 구간끼리 시각이 다르면 여전히 multi-time', () => {
+    const hw = hwOf([['a', '경부선', 1000], ['b', '경부선', 1000]]);
+    const f: TrafficFetch = { dataAt: [AT, T2], items: [item('a', '경부고속도로', 80), item('b', '경부고속도로', 70, T2)] };
+    const r = pickHighways(f, hw);
+    expect(r.dataAt).toEqual([AT, T2]);
+    expect(validateTraffic({ dataAt: r.dataAt, speeds: r.speeds, prev: null, hwSize: 2 })).toEqual({ ok: false, reason: 'multi-time' });
   });
 });

@@ -13,7 +13,9 @@ vi.mock('@traffic-room/db', async (orig) => ({
   createNeonDb: () => h.db,
 }));
 
-import { GET } from './route';
+import { GET as get } from './route';
+
+const GET = (query = '') => get(new Request(`http://localhost/api/traffic${query}`));
 
 const summary = { avgSpeed: 80, ok: 2, slow: 0, jam: 0, jamKm: 0 };
 const at = (min: number) => new Date(Date.now() + min * 60_000);
@@ -40,25 +42,38 @@ describe('with DATABASE_URL', () => {
     expect(await res.json()).toEqual({ id: null });
   });
 
-  test('returns the shown snapshot with its speeds and the next show time', async () => {
+  test('returns the shown snapshot with its speeds only', async () => {
     const dataAt = at(-120);
     const id = await saveTrafficSnapshot(db, snap(dataAt, at(-60), [
       { linkId: 'L2', speed: 55 }, { linkId: 'L1', speed: 90 },
     ]));
     await saveTrafficSnapshot(db, snap(at(-60), at(10), [{ linkId: 'L1', speed: 10 }]));
-    await saveTrafficSnapshot(db, snap(at(0), at(70), [{ linkId: 'L1', speed: 20 }]));
     const body = await (await GET()).json();
-    expect(body.id).toBe(id);
-    expect(body.dataAt).toBe(dataAt.toISOString());
-    expect(body.speeds).toEqual([['L1', 90], ['L2', 55]]);
-    expect(Date.parse(body.nextShowAt)).toBeGreaterThan(Date.now());
-    expect(Date.parse(body.nextShowAt)).toBeLessThan(Date.now() + 11 * 60_000);
+    expect(body).toEqual({ id, dataAt: dataAt.toISOString(), speeds: [['L1', 90], ['L2', 55]] });
   });
 
-  test('nextShowAt is null when nothing is scheduled within 24 hours', async () => {
-    await saveTrafficSnapshot(db, snap(at(-120), at(-60), [{ linkId: 'L1', speed: 90 }]));
-    await saveTrafficSnapshot(db, snap(at(-60), at(26 * 60), [{ linkId: 'L1', speed: 20 }]));
-    expect((await (await GET()).json()).nextShowAt).toBeNull();
+  test('?id= at or below the shown snapshot is served and cached', async () => {
+    const id = await saveTrafficSnapshot(db, snap(at(-120), at(-60), [{ linkId: 'L1', speed: 90 }]));
+    for (const q of [`?id=${id}`, `?id=${id - 1}`]) {
+      const res = await GET(q);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('public, s-maxage=60, stale-while-revalidate=30');
+      expect((await res.json()).id).toBe(id);
+    }
+  });
+
+  test('?id= newer than the shown snapshot is a 503 no-store, so the old one is never cached under the new key', async () => {
+    const id = await saveTrafficSnapshot(db, snap(at(-120), at(-60), [{ linkId: 'L1', speed: 90 }]));
+    const res = await GET(`?id=${id + 1}`);
+    expect(res.status).toBe(503);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+
+  test('?id= while nothing is shown yet is a 503 no-store', async () => {
+    await saveTrafficSnapshot(db, snap(at(-5), at(30), [{ linkId: 'L1', speed: 80 }]));
+    const res = await GET('?id=1');
+    expect(res.status).toBe(503);
+    expect(res.headers.get('cache-control')).toBe('no-store');
   });
 
   test('returns 503 no-store when the DB is unreachable', async () => {
@@ -86,7 +101,7 @@ describe('fixture replay without DATABASE_URL', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.id).toBe(0);
-    expect(body.nextShowAt).toBeNull();
+    expect(body).not.toHaveProperty('nextShowAt');
     const fixture = await createItsClient({ mode: 'fixture' }).traffic();
     const highways = loadHighways(fileURLToPath(new URL('../../../../public/highways.json', import.meta.url)));
     const expected = fixture.items.filter((i) => highways.get(i.linkId));

@@ -1,6 +1,6 @@
 import { canCall, latestTrafficSnapshot, pruneTraffic, recordRun, saveTrafficSnapshot } from '@traffic-room/db';
 import type { HighwaysIndex } from '@traffic-room/highways';
-import { depsFromEnv, errorCode } from './env.ts';
+import { depsFromEnv, errorCode, highwaysFromRepo } from './env.ts';
 import type { RunDeps } from './run-events.ts';
 import { pickHighways, summarize, validateTraffic } from './traffic.ts';
 
@@ -16,8 +16,8 @@ export async function runTraffic({ db, its, now, timing, highways }: RunDeps & {
   try {
     const prev = await latestTrafficSnapshot(db);
     const fetched = await its.traffic();
-    const { speeds, missing, unknown } = pickHighways(fetched, highways);
-    const v = validateTraffic({ fetch: fetched, speeds, prev, hwSize: highways.size });
+    const { speeds, dataAt, missing, unknown } = pickHighways(fetched, highways);
+    const v = validateTraffic({ dataAt, speeds, prev, hwSize: highways.size });
     if (!v.ok) {
       if (v.reason === 'not-newer') {
         await recordRun(db, 'traffic', true, 0, collectedAt);
@@ -46,7 +46,7 @@ export async function runTraffic({ db, its, now, timing, highways }: RunDeps & {
 if (import.meta.main) {
   let result;
   try {
-    result = await runTraffic(depsFromEnv());
+    result = await runTraffic({ ...depsFromEnv(), highways: highwaysFromRepo() });
   } catch (e) {
     // DB 오류 문구에 접속 정보가 섞일 수 있어 code 만 남긴다.
     console.error('traffic failed code=' + errorCode(e));

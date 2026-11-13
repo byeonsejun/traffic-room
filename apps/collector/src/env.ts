@@ -17,9 +17,15 @@ export function depsFromEnv() {
     its: createItsClient({ mode, apiKey: process.env.ITS_API_KEY }),
     now: () => new Date(),
     timing: readTiming(process.env),
-    // 모듈 위치 기준이라 Mac 수집기 복사본에서도 같은 경로로 찾는다.
-    highways: loadHighways(fileURLToPath(new URL('../../web/public/highways.json', import.meta.url))),
   };
+}
+
+/**
+ * 교통 작업 전용: 저장소의 도로 모양 파일을 읽는다. 돌발 · CCTV 실행이 이 파일에 기대지 않게 depsFromEnv 와 따로 둔다.
+ * 모듈 위치 기준이라 Mac 수집기 복사본에서도 같은 경로로 찾는다.
+ */
+export function highwaysFromRepo() {
+  return loadHighways(fileURLToPath(new URL('../../web/public/highways.json', import.meta.url)));
 }
 
 export function errorCode(e: unknown): string {

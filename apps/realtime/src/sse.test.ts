@@ -23,6 +23,7 @@ function fakeMetrics(initial: Metrics) {
   const state: MetricsState & { set(m: Metrics): void; subscribers(): number } = {
     current: () => value,
     ready: () => true,
+    start: async () => {},
     reload: async () => {},
     onEvent: () => {},
     subscribe(fn) {

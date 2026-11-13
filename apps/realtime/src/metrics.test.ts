@@ -20,9 +20,10 @@ const zero = (): Record<Category, number> => ({
   accident: 0, breakdown: 0, weather: 0, construction: 0, report: 0, other: 0,
 });
 
-function ev(id: number, kind: LogEvent['kind'], category: Category = 'accident'): LogEvent {
+/** 송출 시각 기본값은 첫 조회(T0) 1초 뒤: DB 값에 아직 없는 송출이다. */
+function ev(id: number, kind: LogEvent['kind'], category: Category = 'accident', emitAt = new Date(T0.getTime() + 1000)): LogEvent {
   return {
-    id, kind, emitAt: T0.toISOString(),
+    id, kind, emitAt: emitAt.toISOString(),
     incident: {
       key: `k${id}`, category, roadName: '경부선', direction: '서울',
       detail: '', message: '', lanesBlocked: '', lon: 127, lat: 37, startedAt: null,
@@ -32,11 +33,11 @@ function ev(id: number, kind: LogEvent['kind'], category: Category = 'accident')
 
 type Loaded = { shown: TrafficSnapshotRow | null; upcoming: TrafficSnapshotRow[]; incidents: Metrics['incidents'] };
 
-function make(load: (at: Date) => Promise<Loaded>) {
+function make(load: (at: Date) => Promise<Loaded>, env: Record<string, string> = {}) {
   return createMetricsState({
     load,
     now: () => new Date(),
-    timing: readTiming({}),
+    timing: readTiming(env),
     setTimer: setTimeout,
     clearTimer: clearTimeout,
   });
@@ -254,5 +255,68 @@ test('조회 중에 받은 송출은 조회 기준 시각 이후 것만 DB 결�
   resolve({ shown: null, upcoming: [], incidents: { total: 3, byCategory: { ...zero(), construction: 3 } } });
   await loading;
   expect(m.current().incidents).toEqual({ total: 4, byCategory: { ...zero(), construction: 3, accident: 1 } });
+  m.stop();
+});
+
+test('마지막 조회 시각 이전에 송출된 것은 DB 값에 이미 있으니 건너뛰고, 그 뒤 것만 반영한다', async () => {
+  const m = make(async () => ({ shown: null, upcoming: [], incidents: { total: 2, byCategory: { ...zero(), weather: 2 } } }));
+  await vi.advanceTimersByTimeAsync(10 * MIN);
+  const loadAt = new Date(T0.getTime() + 10 * MIN);
+  await m.reload();
+  const fn = vi.fn();
+  m.subscribe(fn);
+
+  // 스케줄러가 늦게 내보낸 송출(emitAt 이 조회 기준보다 앞): 이미 센 것이다.
+  m.onEvent(ev(1, 'arrived', 'accident', new Date(loadAt.getTime() - MIN)));
+  m.onEvent(ev(2, 'cleared', 'weather', new Date(loadAt.getTime() - MIN)));
+  m.onEvent(ev(3, 'arrived', 'accident', loadAt));
+  expect(m.current().incidents).toEqual({ total: 2, byCategory: { ...zero(), weather: 2 } });
+  expect(fn).not.toHaveBeenCalled();
+
+  m.onEvent(ev(4, 'arrived', 'accident', new Date(loadAt.getTime() + 1000)));
+  expect(m.current().incidents).toEqual({ total: 3, byCategory: { ...zero(), weather: 2, accident: 1 } });
+  expect(fn).toHaveBeenCalledTimes(1);
+  m.stop();
+});
+
+test('start: 수집 간격 15분이면 15분마다 다시 읽어, show_at 15분 전에 들어온 스냅샷도 제때 내보낸다', async () => {
+  const A = snap(1, -30, 80);
+  let rows: Loaded = { shown: A, upcoming: [], incidents: { total: 0, byCategory: zero() } };
+  let calls = 0;
+  const m = make(async () => {
+    calls += 1;
+    return rows;
+  }, { COLLECT_INTERVAL_MINUTES: '15', DELAY_MINUTES: '20' });
+  await m.start();
+  expect(calls).toBe(1);
+
+  // 1분 뒤 수집기가 show_at = +16분인 스냅샷을 넣는다.
+  await vi.advanceTimersByTimeAsync(MIN);
+  const B = snap(2, 16, 60);
+  rows = { shown: A, upcoming: [B], incidents: { total: 0, byCategory: zero() } };
+
+  await vi.advanceTimersByTimeAsync(14 * MIN); // +15분: 두 번째 조회
+  expect(calls).toBe(2);
+  expect(m.current().nextTrafficAt).toBe(B.showAt.toISOString());
+  await vi.advanceTimersByTimeAsync(MIN); // +16분
+  expect(m.current().trafficSnapshotId).toBe(2);
+  m.stop();
+  await vi.advanceTimersByTimeAsync(60 * MIN);
+  expect(calls).toBe(2);
+});
+
+test('start: 수집 간격 60분이면 30분마다 다시 읽는다', async () => {
+  let calls = 0;
+  const m = make(async () => {
+    calls += 1;
+    return { shown: null, upcoming: [], incidents: { total: 0, byCategory: zero() } };
+  });
+  await m.start();
+  await vi.advanceTimersByTimeAsync(29 * MIN);
+  expect(calls).toBe(1);
+  await vi.advanceTimersByTimeAsync(MIN);
+  expect(calls).toBe(2);
+  await vi.advanceTimersByTimeAsync(30 * MIN);
+  expect(calls).toBe(3);
   m.stop();
 });

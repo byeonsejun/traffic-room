@@ -100,12 +100,17 @@ describe('normalizeTraffic', () => {
 
   test('drops items whose speed is not a number', () => {
     const out = normalizeTraffic(t(r, { ...r, linkId: '2', speed: '' }, { ...r, linkId: '3', speed: 'x' }));
-    expect(out.items).toEqual([{ linkId: '1', roadName: '경부고속도로', speed: 80 }]);
+    expect(out.items).toEqual([{ linkId: '1', roadName: '경부고속도로', speed: 80, dataAt: '2026-11-13T02:00:00.000Z' }]);
   });
 
   test('collects distinct createdDate as UTC ISO', () => {
     const out = normalizeTraffic(t(r, { ...r, linkId: '2', createdDate: '20261113110500' }, { ...r, linkId: '3' }));
     expect(out.dataAt).toEqual(['2026-11-13T02:00:00.000Z', '2026-11-13T02:05:00.000Z']);
+  });
+
+  test('each item keeps its own createdDate (null when missing or malformed)', () => {
+    const out = normalizeTraffic(t(r, { ...r, linkId: '2', createdDate: '20261113110500' }, { ...r, linkId: '3', createdDate: '' }));
+    expect(out.items.map((i) => i.dataAt)).toEqual(['2026-11-13T02:00:00.000Z', '2026-11-13T02:05:00.000Z', null]);
   });
 
   test('normalizes the real snapshot', () => {

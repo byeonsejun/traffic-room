@@ -52,12 +52,12 @@ describe('save / latest', () => {
   });
 });
 
-describe('getInsights trafficUntil', () => {
-  test('buckets and routes stop at trafficUntil so snapshots not shown yet stay out', async () => {
+describe('getInsights until', () => {
+  test('buckets and routes stop at until so snapshots not shown yet stay out', async () => {
     await saveTrafficSnapshot(db, snap(at(-90)));
     await saveTrafficSnapshot(db, snap(at(-60)));
     await saveTrafficSnapshot(db, snap(at(-30), { showAt: at(30) }));
-    const i = await getInsights(db, now, { trafficUntil: at(-60) });
+    const i = await getInsights(db, now, { until: at(-60) });
     expect(i.buckets.map((b) => b.dataAt)).toEqual([at(-90).toISOString(), at(-60).toISOString()]);
     expect(i.routes.map((r) => r.dataAt)).toEqual([at(-90).toISOString(), at(-60).toISOString()]);
     // 기본값은 지금까지(이전 동작 그대로)
@@ -66,13 +66,26 @@ describe('getInsights trafficUntil', () => {
 });
 
 describe('pruneTraffic', () => {
-  test('keeps only the newest 3 snapshots and their links', async () => {
+  // 실제처럼 show_at = data_at + 60분
+  const save = (dataMin: number) => saveTrafficSnapshot(db, snap(at(dataMin), { showAt: at(dataMin + 60) }));
+
+  test('keeps waiting snapshots, the shown one and the one before it', async () => {
     const all: number[] = [];
-    for (let k = 5; k >= 1; k--) all.push(await saveTrafficSnapshot(db, snap(at(-k * 60))));
+    for (const m of [-300, -240, -180, -120, -30]) all.push(await save(m));
+    // show_at: -240, -180, -120, -60(보여 주는 것), +30(대기)
     await pruneTraffic(db, now);
     expect(await ids()).toEqual(all.slice(2));
     const n = await db.query<{ n: string }>('select count(*) as n from link_speeds');
     expect(Number(n[0]!.n)).toBe(9);
+  });
+
+  test('a long delay with many waiting snapshots never drops the shown one', async () => {
+    // 지연 60분 · 수집 15분: show_at 이 미래인 대기 스냅샷이 넷
+    const all: number[] = [];
+    for (const m of [-120, -90, -75, -45, -30, -15, 0]) all.push(await save(m));
+    // show_at: -60, -30, -15(보여 주는 것), +15, +30, +45, +60
+    await pruneTraffic(db, now);
+    expect(await ids()).toEqual(all.slice(1));
   });
 
   test('drops buckets older than 26h only', async () => {
@@ -102,13 +115,13 @@ describe('shown / upcoming', () => {
     expect(await shownTrafficSnapshot(db, now)).toBeNull();
   });
 
-  test('upcoming is (from, to]', async () => {
+  test('upcoming is every snapshot with show_at after from, however far ahead', async () => {
     await saveTrafficSnapshot(db, snap(at(-180), { showAt: at(0) }));
     const b = await saveTrafficSnapshot(db, snap(at(-120), { showAt: at(10) }));
+    const d = await saveTrafficSnapshot(db, snap(at(-30), { showAt: at(55) }));
     const c = await saveTrafficSnapshot(db, snap(at(-60), { showAt: at(30) }));
-    await saveTrafficSnapshot(db, snap(at(-30), { showAt: at(31) }));
-    const rows = await upcomingTrafficSnapshots(db, now, at(30));
-    expect(rows.map((r) => r.id)).toEqual([b, c]);
+    const rows = await upcomingTrafficSnapshots(db, now);
+    expect(rows.map((r) => r.id)).toEqual([b, c, d]);
   });
 });
 
@@ -157,11 +170,23 @@ describe('incident stats', () => {
     await addIncident('c', 'accident', { started: new Date('2026-11-12T20:00:00Z') });
     await addIncident('old', 'accident', { started: new Date('2026-11-11T20:00:00Z') });
     await addIncident('none', 'accident', { started: null });
-    // 교통 지연 기준(trafficUntil)은 돌발 집계에 영향을 주지 않는다.
-    const { incidentsByHour } = await getInsights(db, now, { trafficUntil: at(-60) });
+    const { incidentsByHour } = await getInsights(db, now);
     expect(incidentsByHour).toEqual([
       { hour: '2026-11-12T20:00:00.000Z', total: 1, byCategory: { accident: 1, breakdown: 0, weather: 0, construction: 0, report: 0, other: 0 } },
       { hour: '2026-11-13T10:00:00.000Z', total: 2, byCategory: { accident: 1, breakdown: 0, weather: 1, construction: 0, report: 0, other: 0 } },
+    ]);
+  });
+
+  test('incidentsByHour covers the 24 hours ending at until, like traffic', async () => {
+    // until = now - 60분 = 11:00. 창은 (전날 11:00, 11:00]
+    await addIncident('late', 'accident', { started: new Date('2026-11-13T11:30:00Z') });
+    await addIncident('edge', 'weather', { started: new Date('2026-11-13T11:00:00Z') });
+    await addIncident('early', 'accident', { started: new Date('2026-11-12T11:30:00Z') });
+    await addIncident('gone', 'accident', { started: new Date('2026-11-12T10:30:00Z') });
+    const { incidentsByHour } = await getInsights(db, now, { until: at(-60) });
+    expect(incidentsByHour.map((h) => [h.hour, h.total])).toEqual([
+      ['2026-11-12T11:00:00.000Z', 1],
+      ['2026-11-13T11:00:00.000Z', 1],
     ]);
   });
 });

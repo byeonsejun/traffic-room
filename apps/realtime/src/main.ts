@@ -23,16 +23,17 @@ const its = createItsClient({ mode, apiKey: process.env.ITS_API_KEY });
 const now = () => new Date();
 const timing = readTiming(process.env);
 const hub = createHub();
-const RELOAD_MINUTES = 30;
+/** 돌발 송출 스케줄러가 다음 창을 읽는 주기. 지표 주기와 따로다. */
+const SCHEDULER_RELOAD_MINUTES = 30;
 
-// 지표도 스케줄러와 같은 30분 주기로만 DB 를 읽는다(Neon 자동 일시정지 유지).
-// 그 사이 공개될 교통 스냅샷은 이때 미리 읽어 두고 showAt 에 맞춰 내보낸다.
+// 지표는 min(30분, 수집 간격)마다만 DB 를 읽는다(Neon 자동 일시정지 유지).
+// 아직 공개 전인 교통 스냅샷은 시각 제한 없이 전부(정리 덕에 몇 줄) 읽어 두고 showAt 에 맞춰 내보낸다.
+// 그래서 다음 스냅샷이 DB 에 있으면 nextTrafficAt 은 늘 알려진다.
 const metrics = createMetricsState({
   load: async (at) => {
-    const until = new Date(at.getTime() + RELOAD_MINUTES * 60_000);
     const [shown, upcoming, incidents] = await Promise.all([
       shownTrafficSnapshot(db, at),
-      upcomingTrafficSnapshots(db, at, until),
+      upcomingTrafficSnapshots(db, at),
       activeIncidentCounts(db, at),
     ]);
     return { shown, upcoming, incidents };
@@ -50,18 +51,16 @@ const scheduler = createScheduler({
   },
   now,
   windowMinutes: 60,
-  reloadMinutes: RELOAD_MINUTES,
+  reloadMinutes: SCHEDULER_RELOAD_MINUTES,
 });
 
 await app.listen({ port, host: '0.0.0.0' });
 app.log.info(`its mode=${mode}, allowed origins=${allowedOrigins.length}, cctv refresh=${cctvRefresh ? 'on' : 'off'}`);
 await scheduler.start();
-await metrics.reload();
-const metricsReload = setInterval(() => void metrics.reload(), RELOAD_MINUTES * 60_000);
+await metrics.start();
 
 const shutdown = async () => {
   scheduler.stop();
-  clearInterval(metricsReload);
   metrics.stop();
   await app.close();
   process.exit(0);

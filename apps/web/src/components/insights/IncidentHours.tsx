@@ -10,14 +10,22 @@ import { Card, type LoadStatus } from './Card';
 
 const HEIGHT = 240;
 
-/** 최근 24시간 돌발 발생을 1시간 칸으로 센 막대. 막대에 올리면 그 시간의 유형별 수가 보인다. */
-export function IncidentHours({ incidentsByHour, loadedAt, status }: {
+/**
+ * 최근 24시간 돌발 발생을 1시간 칸으로 센 막대. 막대에 올리면 그 시간의 유형별 수가 보인다.
+ * 축은 교통 차트처럼 지금 − 지연에서 끝난다(지연은 /api/insights 가 집계에 쓴 값).
+ */
+export function IncidentHours({ incidentsByHour, loadedAt, delayMinutes, status }: {
   incidentsByHour: IncidentHour[];
   loadedAt: number;
+  delayMinutes: number;
   status: LoadStatus;
 }) {
-  const hours = useMemo(() => incidentHours(incidentsByHour, new Date(loadedAt)), [incidentsByHour, loadedAt]);
-  const option = useMemo(() => incidentHoursOption(incidentsByHour, new Date(loadedAt)), [incidentsByHour, loadedAt]);
+  const hours = useMemo(
+    () => incidentHours(incidentsByHour, new Date(loadedAt), delayMinutes), [incidentsByHour, loadedAt, delayMinutes],
+  );
+  const option = useMemo(
+    () => incidentHoursOption(incidentsByHour, new Date(loadedAt), delayMinutes), [incidentsByHour, loadedAt, delayMinutes],
+  );
   const table = useMemo(() => ({
     columns: ['시각', '전체', '유형'],
     rows: hours.map((h) => [

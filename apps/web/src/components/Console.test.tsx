@@ -176,7 +176,7 @@ test('a fresh construction arrival does not bump the count, an accident does', a
 
 test('traffic speeds are fetched once and handed to the map', async () => {
   snapshots.push(() => ok(snap(1)));
-  traffic = () => ok({ id: 7, dataAt: '2026-11-13T02:00:00.000Z', nextShowAt: null, speeds: [['A', 75], ['B', 12]] });
+  traffic = () => ok({ id: 7, dataAt: '2026-11-13T02:00:00.000Z', speeds: [['A', 75], ['B', 12]] });
   await mount();
   expect(fetchMock.mock.calls.filter(([p]) => p === '/api/traffic')).toHaveLength(1);
   const last = mapProps.at(-1)!;
@@ -205,7 +205,7 @@ test('with no traffic snapshot yet the map gets no speeds and no error', async (
 
 const trafficCalls = () => fetchMock.mock.calls.filter(([p]) => String(p).startsWith('/api/traffic'));
 const trafficBody = (id: number, speeds: [string, number][], dataAt = '2026-11-13T02:00:00.000Z') =>
-  ({ id, dataAt, nextShowAt: null, speeds });
+  ({ id, dataAt, speeds });
 const metrics = (trafficSnapshotId: number | null, dataAt: string | null = '2026-11-13T02:00:00.000Z'): Metrics => ({
   trafficSnapshotId,
   trafficDataAt: dataAt,

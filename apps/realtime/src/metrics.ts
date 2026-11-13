@@ -8,7 +8,7 @@ export interface MetricsLoad {
 }
 
 export interface MetricsDeps {
-  /** `at` 기준으로 공개 중 · 다음 30분 · 진행 중 돌발을 읽는다. */
+  /** `at` 기준으로 공개 중 · 아직 공개 전인 교통 스냅샷 전부와 진행 중 돌발 수를 읽는다. */
   load: (at: Date) => Promise<MetricsLoad>;
   now: () => Date;
   timing: Timing;
@@ -20,6 +20,8 @@ export interface MetricsState {
   current(): Metrics;
   /** 첫 조회가 성공했는지. 그 전에는 지어낸 값(빈 0)을 내보내지 않는다. */
   ready(): boolean;
+  /** 첫 조회를 하고, 그 뒤 min(30분, 수집 간격)마다 다시 읽는다. */
+  start(): Promise<void>;
   reload(): Promise<void>;
   onEvent(e: LogEvent): void;
   subscribe(fn: (m: Metrics) => void): () => void;
@@ -34,12 +36,21 @@ function countsFrom(src?: Partial<Record<Category, number>>): Record<Category, n
 /** 첫 조회가 실패하면 30초, 60초, … 로 늘려 다시 시도하고 평소 주기(30분)를 넘기지 않는다. */
 const FIRST_RETRY_MS = 30_000;
 const MAX_RETRY_MS = 30 * 60_000;
+/** 다시 읽는 주기의 상한(분). Neon 자동 일시정지를 지키려고 이보다 자주 읽지 않는다. */
+const MAX_RELOAD_MINUTES = 30;
+
+/**
+ * 지표를 다시 읽는 주기(분). 수집 간격이 30분보다 짧으면(15 · 20분) 그 간격마다 읽어야, show_at 보다
+ * 한 간격쯤 앞서 들어온 스냅샷을 공개 시각 전에 미리 알고 제때 내보낸다.
+ */
+export const metricsReloadMinutes = (timing: Timing) => Math.min(MAX_RELOAD_MINUTES, timing.intervalMinutes);
 
 /**
  * 화면 전체가 함께 보는 지표 상태.
  *
- * DB 는 reload 때만 읽는다(30분 주기). 그 사이에는 미리 읽어 둔 다음 교통 스냅샷을 showAt 에 맞춰
- * 공개하고, 돌발 수는 스케줄러 송출(onEvent)로만 고친다. 값이 실제로 바뀔 때만 구독자에게 알린다.
+ * DB 는 reload 때만 읽는다(min(30분, 수집 간격) 주기). 그 사이에는 미리 읽어 둔 다음 교통 스냅샷을 showAt 에 맞춰
+ * 공개하고, 돌발 수는 스케줄러 송출(onEvent)로만 고친다. 마지막 조회 시각 이전에 송출된 것은 DB 값에 이미 들어 있어
+ * 건너뛴다. 값이 실제로 바뀔 때만 구독자에게 알린다.
  */
 export function createMetricsState(deps: MetricsDeps): MetricsState {
   const setTimer = deps.setTimer ?? setTimeout;
@@ -58,7 +69,10 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
   let loaded = false;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let retryMs = FIRST_RETRY_MS;
-  /** 조회 중에 받은 송출. 결과를 덮어쓴 뒤 조회 기준 시각보다 나중 것만 다시 반영한다. */
+  let periodicTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 마지막으로 성공한 조회의 기준 시각. 이때까지 송출된 돌발은 DB 값(byCategory · total)에 들어 있다. */
+  let lastLoadAtMs = -Infinity;
+  /** 조회 중에 받은 송출. 결과를 덮어쓴 뒤 같은 규칙(조회 기준 시각보다 나중 것만)으로 다시 반영한다. */
   let inFlight: { at: number; events: LogEvent[] } | null = null;
 
   function current(): Metrics {
@@ -133,8 +147,9 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
       .sort((a, b) => a.showAt.getTime() - b.showAt.getTime());
     byCategory = countsFrom(data.incidents.byCategory);
     total = data.incidents.total;
+    lastLoadAtMs = buffer.at;
     // 조회 기준 시각 이후에 송출된 것은 DB 값에 아직 없으니 다시 더한다. 그 전 것은 이미 들어 있다.
-    for (const e of buffer.events) if (Date.parse(e.emitAt) > buffer.at) applyEvent(e);
+    for (const e of buffer.events) if (isNew(e)) applyEvent(e);
     const first = !loaded;
     loaded = true;
     publishDue(first);
@@ -150,9 +165,20 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
     }, delay);
   }
 
+  /** 마지막 조회 뒤에 송출된 것인지. 아니면 DB 값에 이미 들어 있다. */
+  const isNew = (e: LogEvent) => Date.parse(e.emitAt) > lastLoadAtMs;
+
   function onEvent(e: LogEvent) {
     inFlight?.events.push(e);
-    if (applyEvent(e)) notify();
+    if (isNew(e) && applyEvent(e)) notify();
+  }
+
+  function schedulePeriodic() {
+    periodicTimer = setTimer(() => {
+      if (stopped) return;
+      schedulePeriodic();
+      void reload();
+    }, metricsReloadMinutes(deps.timing) * 60_000);
   }
 
   /** 돌발 수만 고친다. 바뀌었으면 true. */
@@ -173,6 +199,12 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
   return {
     current,
     ready: () => loaded,
+    async start() {
+      if (stopped) return;
+      if (periodicTimer !== undefined) clearTimer(periodicTimer);
+      schedulePeriodic();
+      await reload();
+    },
     reload,
     onEvent,
     subscribe(fn) {
@@ -188,6 +220,8 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
       timer = undefined;
       if (retryTimer !== undefined) clearTimer(retryTimer);
       retryTimer = undefined;
+      if (periodicTimer !== undefined) clearTimer(periodicTimer);
+      periodicTimer = undefined;
       inFlight = null;
       subs.clear();
     },

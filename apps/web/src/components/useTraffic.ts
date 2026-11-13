@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { load } from '@/lib/load';
 
 type TrafficResponse =
-  | { id: number; dataAt: string; nextShowAt: string | null; speeds: [string, number][] }
+  | { id: number; dataAt: string; speeds: [string, number][] }
   | { id: null };
 export type Traffic = { speeds: Map<string, number> | null; dataAt: string | null; error: boolean };
 const NO_TRAFFIC: Traffic = { speeds: null, dataAt: null, error: false };

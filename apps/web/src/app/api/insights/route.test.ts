@@ -59,6 +59,21 @@ describe('with DATABASE_URL', () => {
     expect(body.routes.map((r: { dataAt: string }) => r.dataAt)).toEqual([shown.toISOString()]);
   });
 
+  test('incidents by hour end at now − delay too', async () => {
+    vi.stubEnv('DELAY_MINUTES', '60');
+    const add = (key: string, startedAt: Date) => db.query(
+      `insert into incidents (key, category, road_name, direction, detail, message, lanes_blocked, lon, lat,
+         started_at, first_seen_at, last_seen_at)
+       values ($1, 'accident', 'r', 'd', 'x', 'm', '', 127, 37, $2, $2, $2)`,
+      [key, startedAt],
+    );
+    await add('visible', new Date(Date.now() - 2 * 3_600_000));
+    await add('not-yet', new Date(Date.now() - 20 * 60_000));
+    const body = await (await GET()).json();
+    const total = body.incidentsByHour.reduce((s: number, h: { total: number }) => s + h.total, 0);
+    expect(total).toBe(1);
+  });
+
   test('timing follows the environment', async () => {
     vi.stubEnv('DELAY_MINUTES', '20');
     vi.stubEnv('COLLECT_INTERVAL_MINUTES', '30');

@@ -47,7 +47,9 @@ export function Insights() {
           <RouteHeatmap routes={routes} intervalMinutes={intervalMinutes} status={insights.status} />
           <SlowRoutes routes={routes} status={insights.status} />
           <LevelArea buckets={buckets} intervalMinutes={intervalMinutes} status={insights.status} />
-          <IncidentHours incidentsByHour={incidentsByHour} loadedAt={loadedAt} status={insights.status} />
+          <IncidentHours
+            incidentsByHour={incidentsByHour} loadedAt={loadedAt} delayMinutes={insights.data.delayMinutes} status={insights.status}
+          />
         </div>
       </main>
     </div>

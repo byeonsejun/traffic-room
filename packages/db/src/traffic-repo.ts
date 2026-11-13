@@ -70,13 +70,17 @@ export async function latestTrafficSnapshot(
   return r ? { id: Number(r.id), dataAt: toDate(r.data_at), linkCount: r.link_count } : null;
 }
 
-/** 최신 3개 밖의 스냅샷(구간 속도는 cascade)과 26시간 지난 버킷을 지운다. */
+/**
+ * 대기 중(show_at > now)인 스냅샷은 모두, 지금 보여 주는 것과 그 바로 전 것까지 남기고 나머지(구간 속도는 cascade)를 지운다.
+ * 지연이 길어 대기 중인 것이 여럿이어도 보여 주는 스냅샷은 지워지지 않는다. 26시간 지난 버킷도 지운다.
+ */
 export async function pruneTraffic(db: Db, now: Date): Promise<void> {
   const cutoff = iso(new Date(now.getTime() - 26 * HOUR));
   await db.batch([
     {
-      text: `delete from traffic_snapshots where id not in
-             (select id from traffic_snapshots order by data_at desc limit 3)`,
+      text: `delete from traffic_snapshots where show_at <= $1 and id not in
+             (select id from traffic_snapshots where show_at <= $1 order by show_at desc, id desc limit 2)`,
+      params: [iso(now)],
     },
     { text: 'delete from traffic_buckets where data_at < $1', params: [cutoff] },
     { text: 'delete from route_buckets where data_at < $1', params: [cutoff] },
@@ -119,11 +123,11 @@ export async function shownTrafficSnapshot(db: Db, now: Date): Promise<TrafficSn
   return rows[0] ? toSnapshotRow(rows[0]) : null;
 }
 
-/** show_at 이 (from, to] 인 스냅샷을 공개 순서대로. */
-export async function upcomingTrafficSnapshots(db: Db, from: Date, to: Date): Promise<TrafficSnapshotRow[]> {
+/** show_at 이 from 뒤인 스냅샷 전부를 공개 순서대로. 정리(pruneTraffic) 덕에 몇 줄 안 된다. */
+export async function upcomingTrafficSnapshots(db: Db, from: Date): Promise<TrafficSnapshotRow[]> {
   const rows = await db.query<SnapshotDbRow>(
-    `select ${SNAPSHOT_COLS} from traffic_snapshots where show_at > $1 and show_at <= $2 order by show_at`,
-    [iso(from), iso(to)],
+    `select ${SNAPSHOT_COLS} from traffic_snapshots where show_at > $1 order by show_at`,
+    [iso(from)],
   );
   return rows.map(toSnapshotRow);
 }
@@ -158,13 +162,15 @@ export async function activeIncidentCounts(
 }
 
 /**
- * 24시간 요약. `trafficUntil`(기본 now)보다 새 교통 기록은 아직 화면에 보일 차례가 아니라 빼고,
- * 돌발 집계는 `now` 기준 그대로 둔다.
+ * 24시간 요약. `until`(기본 now, 보통 now − 지연)을 교통 기록과 시간대별 돌발의 끝으로 둔다.
+ * 그보다 새 교통 기록은 아직 화면에 보일 차례가 아니라 빼고, 돌발도 같은 24시간 창(until − 24시간, until]으로 센다.
+ * 돌발이 보이는지(arrive_at)는 지금(now) 기준이다.
  */
-export async function getInsights(db: Db, now: Date, opts: { trafficUntil?: Date } = {}): Promise<Insights> {
-  const since = iso(new Date(now.getTime() - 26 * HOUR));
-  const sinceDay = iso(new Date(now.getTime() - DAY));
-  const until = iso(opts.trafficUntil ?? now);
+export async function getInsights(db: Db, now: Date, opts: { until?: Date } = {}): Promise<Insights> {
+  const end = opts.until ?? now;
+  const since = iso(new Date(end.getTime() - 26 * HOUR));
+  const sinceDay = iso(new Date(end.getTime() - DAY));
+  const until = iso(end);
   const buckets = await db.query<Omit<SnapshotDbRow, 'id' | 'show_at'>>(
     `select data_at, avg_speed, ok, slow, jam, jam_km from traffic_buckets
      where data_at >= $1 and data_at <= $2 order by data_at`,
@@ -178,9 +184,9 @@ export async function getInsights(db: Db, now: Date, opts: { trafficUntil?: Date
   const hours = await db.query<{ hour: Date | string; category: Category; n: string | number }>(
     `select date_trunc('hour', started_at at time zone 'UTC') at time zone 'UTC' as hour, category, count(*) as n
      from incidents
-     where started_at > $1 and started_at <= $2 and (arrive_at is null or arrive_at <= $2)
+     where started_at > $1 and started_at <= $2 and (arrive_at is null or arrive_at <= $3)
      group by 1, category order by 1`,
-    [sinceDay, iso(now)],
+    [sinceDay, until, iso(now)],
   );
   const byHour = new Map<string, { hour: string; total: number; byCategory: ByCategory }>();
   for (const r of hours) {

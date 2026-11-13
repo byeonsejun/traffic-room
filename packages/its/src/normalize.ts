@@ -75,7 +75,10 @@ export function normalizeCctvs(raw: unknown, fetchedAt: Date): Cctv[] {
   return out;
 }
 
-export type TrafficFetch = { dataAt: string[]; items: { linkId: string; roadName: string; speed: number }[] };
+/** dataAt: 그 항목의 createdDate(ISO). 비었거나 형식이 다르면 null. */
+export type TrafficItem = { linkId: string; roadName: string; speed: number; dataAt: string | null };
+/** dataAt: 응답 전체(국도 포함)의 서로 다른 createdDate. 저장 검증은 남긴 구간의 항목 시각으로 한다. */
+export type TrafficFetch = { dataAt: string[]; items: TrafficItem[] };
 
 /** 교통소통 응답을 읽는다. 속도가 숫자가 아닌 항목은 뺀다. 기준 시각 검증은 호출하는 쪽이 한다. */
 export function normalizeTraffic(raw: unknown): TrafficFetch {
@@ -91,8 +94,8 @@ export function normalizeTraffic(raw: unknown): TrafficFetch {
     const text = str(r.speed);
     const speed = Number(text);
     if (text === '' || !Number.isFinite(speed)) continue;
-    items.push({ linkId: str(r.linkId), roadName: str(r.roadName), speed });
     const at = parseKst(str(r.createdDate));
+    items.push({ linkId: str(r.linkId), roadName: str(r.roadName), speed, dataAt: at });
     if (at) dataAt.add(at);
   }
   return { dataAt: [...dataAt].sort(), items };

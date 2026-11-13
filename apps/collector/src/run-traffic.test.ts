@@ -14,7 +14,7 @@ const highways: HighwaysIndex = {
 };
 const fetchOf = (n: number, dataAt = '2026-11-13T01:00:00.000Z'): TrafficFetch => ({
   dataAt: [dataAt],
-  items: ids.slice(0, n).map((linkId) => ({ linkId, roadName: '경부고속도로', speed: 80 })),
+  items: ids.slice(0, n).map((linkId) => ({ linkId, roadName: '경부고속도로', speed: 80, dataAt })),
 });
 const itsOf = (traffic: ItsClient['traffic']): ItsClient => ({ events: vi.fn(async () => []), cctvs: vi.fn(async () => []), traffic });
 const now = () => new Date('2026-11-13T02:10:00.000Z');
@@ -80,6 +80,20 @@ describe('runTraffic', () => {
     const r = await runTraffic({ db, its: itsOf(async () => { throw Object.assign(new Error('x'), { code: 'ITS_RESULT' }); }), now, timing, highways });
     expect(r).toMatchObject({ status: 'failed', code: 'ITS_RESULT' });
     expect(await count(db, 'traffic_snapshots')).toBe(0);
+  });
+});
+
+describe('runTraffic 기준 시각', () => {
+  test('도로 모양 밖 구간의 다른 시각은 저장을 막지 않고, 저장 시각은 본선 구간의 것', async () => {
+    const db = await createTestDb();
+    const base = fetchOf(10);
+    const mixed: TrafficFetch = {
+      dataAt: [...base.dataAt, '2026-11-13T00:55:00.000Z'],
+      items: [...base.items, { linkId: 'N1', roadName: '국도1호선', speed: 50, dataAt: '2026-11-13T00:55:00.000Z' }],
+    };
+    const r = await runTraffic({ db, its: itsOf(async () => mixed), now, timing, highways });
+    expect(r).toMatchObject({ status: 'ok', dataAt: new Date('2026-11-13T01:00:00.000Z') });
+    expect(await count(db, 'traffic_snapshots')).toBe(1);
   });
 });
 

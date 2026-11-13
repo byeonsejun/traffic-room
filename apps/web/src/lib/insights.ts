@@ -400,9 +400,14 @@ export function levelAreaOption(buckets: TrafficBucket[], intervalMinutes: numbe
 
 // ---------------------------------------------------------------- 시간대별 돌발
 
-/** `now` 가 속한 시각까지 거슬러 24시간, 1시간 칸. 상황이 없던 시각은 0건이다(지어낸 값이 아니라 센 결과). */
-export function incidentHours(incidentsByHour: IncidentHour[], now: Date): { hour: string; total: number; byCategory: IncidentHour['byCategory'] | null }[] {
-  const end = Math.floor(now.getTime() / HOUR) * HOUR;
+/**
+ * `now − 지연`이 속한 시각까지 거슬러 24시간, 1시간 칸. /api/insights 의 돌발 집계 창과 끝이 같다.
+ * 상황이 없던 시각은 0건이다(지어낸 값이 아니라 센 결과).
+ */
+export function incidentHours(
+  incidentsByHour: IncidentHour[], now: Date, delayMinutes: number,
+): { hour: string; total: number; byCategory: IncidentHour['byCategory'] | null }[] {
+  const end = Math.floor((now.getTime() - delayMinutes * MIN) / HOUR) * HOUR;
   const byHour = new Map(incidentsByHour.map((h) => [ms(h.hour), h]));
   return Array.from({ length: HISTORY_HOURS }, (_, i) => {
     const t = end - (HISTORY_HOURS - 1 - i) * HOUR;
@@ -411,8 +416,8 @@ export function incidentHours(incidentsByHour: IncidentHour[], now: Date): { hou
   });
 }
 
-export function incidentHoursOption(incidentsByHour: IncidentHour[], now: Date): EChartsCoreOption {
-  const hours = incidentHours(incidentsByHour, now);
+export function incidentHoursOption(incidentsByHour: IncidentHour[], now: Date, delayMinutes: number): EChartsCoreOption {
+  const hours = incidentHours(incidentsByHour, now, delayMinutes);
   const slots = hours.map((h) => ms(h.hour));
   const max = Math.max(0, ...hours.map((h) => h.total));
   const peak = max > 0 ? hours.findIndex((h) => h.total === max) : -1;

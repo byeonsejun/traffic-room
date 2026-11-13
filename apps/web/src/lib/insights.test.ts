@@ -214,12 +214,19 @@ describe('incidentHoursOption', () => {
   const now = new Date(T0 + 23.5 * H);
   const o = incidentHoursOption([
     { hour: at(20), total: 3, byCategory: { accident: 1, breakdown: 2, weather: 0, construction: 0, report: 0, other: 0 } },
-  ], now) as AnyOption;
+  ], now, 0) as AnyOption;
 
   test('24 hourly columns ending at the current hour; hours without incidents are zero', () => {
     expect(o.xAxis.data).toHaveLength(24);
     expect(o.xAxis.data.at(-1)).toBe(at(23));
     expect(o.series[0].data.filter((d: AnyOption) => d.value > 0)).toHaveLength(1);
+  });
+
+  test('with a delay the axis ends at the hour of now − delay, like the traffic charts', () => {
+    const d = incidentHoursOption([], new Date(T0 + 23.5 * H), 60) as AnyOption;
+    expect(d.xAxis.data).toHaveLength(24);
+    expect(d.xAxis.data.at(-1)).toBe(at(22));
+    expect(d.xAxis.data[0]).toBe(at(-1));
   });
 
   test('the bar tooltip lists the count by type', () => {
