@@ -166,3 +166,10 @@ test('the countdown reads as a duration, not a clock time', () => {
   expect(countdown(18 * 60 + 40)).toBe('18분 40초');
   expect(countdown(3600 + 5 * 60 + 12)).toBe('1시간 5분');
 });
+
+test('the top bar shows the last collection time from SSE metrics', async () => {
+  await mount();
+  expect(document.querySelector('.top .collected')).toBeNull();
+  act(() => useMetrics.getState().apply(metrics({ collectedAt: new Date(NOW - 5 * 60_000).toISOString() })));
+  expect(document.querySelector('.top .collected')?.textContent).toMatch(/^마지막 수집 \d\d:\d\d$/);
+});

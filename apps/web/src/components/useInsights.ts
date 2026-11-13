@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Insights } from '@traffic-room/db';
 import { load } from '@/lib/load';
+import { useKnownInterval } from './useFallbackTick';
 
 export type TrafficBucket = Insights['buckets'][number];
 type InsightsResponse = Insights & { delayMinutes: number; intervalMinutes: number };
@@ -19,11 +20,11 @@ const RETRY_BASE_MS = 30_000;
 const RETRY_MAX_MS = 300_000;
 
 /**
- * 24시간 교통 요약. 처음 한 번 받고, 지표가 가리키는 교통 스냅샷이 바뀌면 다시 받는다.
+ * 24시간 교통 요약. 처음 한 번 받고, 지표가 가리키는 교통 스냅샷이 바뀌거나 대비용 박자(refreshTick)가 오면 다시 받는다.
  * 다시 받기가 실패하면 마지막으로 받은 기록을 그대로 둔다. 한 번도 못 받았으면 30초 · 60초 … 5분 간격으로 다시 시도한다.
  * 받기 전 · 실패를 "기록 0시간"으로 읽지 않게 상태를 함께 준다.
  */
-export function useInsights(snapshotId: number | null): InsightsState {
+export function useInsights(snapshotId: number | null, refreshTick = 0): InsightsState {
   const [state, setState] = useState<InsightsState>({ status: 'loading', data: EMPTY });
   const loaded = useRef(false);
   useEffect(() => {
@@ -35,6 +36,7 @@ export function useInsights(snapshotId: number | null): InsightsState {
       load<InsightsResponse>(path, ac.signal).then(
         (r) => {
           loaded.current = true;
+          useKnownInterval.setState({ minutes: r.intervalMinutes });
           setState({
             status: 'ok',
             data: {
@@ -55,6 +57,6 @@ export function useInsights(snapshotId: number | null): InsightsState {
       ac.abort();
       clearTimeout(timer);
     };
-  }, [snapshotId]);
+  }, [snapshotId, refreshTick]);
   return state;
 }

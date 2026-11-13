@@ -15,10 +15,11 @@ const TRAFFIC_TRIES = 3;
  * 지도에 깔 교통 속도. 처음 한 번 받고, 그 뒤에는 지표가 가리키는 스냅샷 id 가 지금 보이는 것보다 새것일 때만 다시 받는다.
  * 한 번이라도 받았으면 다시 받기가 실패해도 마지막 속도를 그대로 둔다. 오류 표시는 한 번도 못 받았을 때만이다.
  */
-export function useTraffic(wantedId: number | null): Traffic {
+export function useTraffic(wantedId: number | null, refreshTick = 0): Traffic {
   const [traffic, setTraffic] = useState<Traffic>(NO_TRAFFIC);
   const wanted = useRef(wantedId);
   const recheck = useRef(() => {});
+  const refetch = useRef(() => {});
 
   useEffect(() => {
     const ac = new AbortController();
@@ -69,6 +70,10 @@ export function useTraffic(wantedId: number | null): Traffic {
       else timer = setTimeout(() => void fetchTraffic(want), TRAFFIC_RETRY_MS);
     };
     recheck.current = check;
+    // SSE 가 조용할 때의 대비 박자. id 없이 받아도 늘기만 하는 규칙이 옛 스냅샷을 걸러 낸다.
+    refetch.current = () => {
+      if (!pending) void fetchTraffic();
+    };
 
     void fetchTraffic();
     return () => {
@@ -76,8 +81,14 @@ export function useTraffic(wantedId: number | null): Traffic {
       ac.abort();
       clearTimeout(timer);
       recheck.current = () => {};
+      refetch.current = () => {};
     };
   }, []);
+
+  const firstTick = useRef(refreshTick);
+  useEffect(() => {
+    if (refreshTick !== firstTick.current) refetch.current();
+  }, [refreshTick]);
 
   useEffect(() => {
     wanted.current = wantedId;

@@ -11,6 +11,7 @@ import { Feed } from './Feed';
 import { MapView } from './MapView';
 import { StatsPanel } from './StatsPanel';
 import { TopBar } from './TopBar';
+import { useFallbackTick } from './useFallbackTick';
 import { useInsights } from './useInsights';
 import { useMetricsStream } from './useMetricsStream';
 import { useTraffic } from './useTraffic';
@@ -21,6 +22,9 @@ const SNAPSHOT_RETRY_BASE_MS = 5_000;
 const SNAPSHOT_RETRY_MAX_MS = 60_000;
 /** 스냅샷 캐시가 조금 낡아 다시 어긋나도 재동기화를 거듭하지 않게 한 번 하고 나면 이만큼 쉰다. */
 const RESYNC_COOLDOWN_MS = 60_000;
+
+/** CCTV 목록을 다시 받는 주기. 라우트 캐시(3600초)와 같다. */
+const CCTV_REFRESH_MS = 60 * 60_000;
 
 type NoticeSource = 'cctvs' | 'snapshot';
 
@@ -39,9 +43,10 @@ export function Console() {
   // 페이지를 열어 둔 동안은 SSE 지표가 더 새 수집 시각을 준다. 오래된 값이 새 값을 덮지 않게 큰 쪽을 쓴다.
   const shownCollectedAt = newerIso(metrics?.collectedAt ?? null, collectedAt);
   // 처음 받기가 실패하면 지도는 바탕선만 그리고 범례가 알린다.
-  const traffic = useTraffic(metrics?.trafficSnapshotId ?? null);
+  const refreshTick = useFallbackTick(!!REALTIME_URL);
+  const traffic = useTraffic(metrics?.trafficSnapshotId ?? null, refreshTick);
   // 왼쪽 평균 속도 추이. 교통 스냅샷이 바뀌면 24시간 요약도 다시 받는다.
-  const insights = useInsights(metrics?.trafficSnapshotId ?? null);
+  const insights = useInsights(metrics?.trafficSnapshotId ?? null, refreshTick);
   const [notices, setNotices] = useState<Partial<Record<NoticeSource, string>>>({});
   const client = useRef<ReturnType<typeof createRealtimeClient> | null>(null);
   const send = useCallback((m: ClientMessage) => client.current?.send(m), []);
@@ -64,7 +69,24 @@ export function Console() {
         return rest;
       });
 
-    load<Cctv[]>('/api/cctvs', ac.signal).then((c) => live && setCctvs(c), (e) => note('cctvs', e));
+    // CCTV 목록은 수집기가 하루 세 번 새로 쓰고 스트림 주소는 8시간쯤 살아 있다. 열어 둔 페이지는 60분마다 다시 받는다.
+    // 선택은 id 로 들고 있어 목록이 바뀌어도 그 id 가 남아 있으면 유지된다. 다시 받기가 실패하면 예전 목록을 그대로 둔다.
+    let cctvLoadedAt = Date.now();
+    const loadCctvs = (first: boolean) => {
+      cctvLoadedAt = Date.now();
+      load<Cctv[]>('/api/cctvs', ac.signal).then(
+        (c) => live && setCctvs(c),
+        (e) => (first ? note('cctvs', e) : undefined),
+      );
+    };
+    loadCctvs(true);
+    const cctvTimer = setInterval(() => {
+      if (!document.hidden) loadCctvs(false);
+    }, CCTV_REFRESH_MS);
+    const onVisible = () => {
+      if (!document.hidden && Date.now() - cctvLoadedAt >= CCTV_REFRESH_MS) loadCctvs(false);
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     const connect = () => {
       if (!live || !REALTIME_URL) return;
@@ -115,6 +137,8 @@ export function Console() {
       live = false;
       ac.abort();
       clearTimeout(retryTimer);
+      clearInterval(cctvTimer);
+      document.removeEventListener('visibilitychange', onVisible);
       client.current?.close();
       client.current = null;
     };

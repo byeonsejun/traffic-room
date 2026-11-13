@@ -5,6 +5,7 @@ import type { MetricsClientOptions } from '@/lib/metrics-client';
 import type { RealtimeClientOptions } from '@/lib/realtime-client';
 import { useConsole, type Snapshot } from '@/store/console';
 import { useMetrics } from '@/store/metrics';
+import { delayLabel } from '@traffic-room/shared';
 import { Console } from './Console';
 
 // Console 은 모듈을 읽을 때 실시간 서버 주소를 정한다. import 보다 먼저 넣는다.
@@ -423,4 +424,67 @@ test('the top bar follows collectedAt from SSE metrics and never goes back to an
   expect(label()).toBe('마지막 수집 17:20');
   await push({ ...metrics(1), collectedAt: '2026-11-13T17:00:00+09:00' });
   expect(label()).toBe('마지막 수집 17:05');
+});
+
+const calls = (prefix: string) => fetchMock.mock.calls.filter(([p]) => String(p).startsWith(prefix)).length;
+const advance = (min: number) => act(async () => { await vi.advanceTimersByTimeAsync(min * 60_000); });
+const cctv = (id: string, url: string) => ({ id, name: id, url, lon: 127, lat: 37 });
+
+test('the delay label follows the delay in SSE metrics over the snapshot value', async () => {
+  snapshots.push(() => ok(snap(1)));
+  await mount();
+  expect(document.querySelector('.delay')?.textContent).toBe(delayLabel(60));
+  await push({ ...metrics(1), delayMinutes: 30 });
+  expect(document.querySelector('.delay')?.textContent).toBe(delayLabel(30));
+});
+
+test('the CCTV list is refetched every 60 minutes, and a failure keeps the old list', async () => {
+  snapshots.push(() => ok(snap(1)));
+  let list = () => ok([cctv('a', 'http://x/1')]);
+  const base = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (input: RequestInfo | URL) => (String(input) === '/api/cctvs' ? list() : base(input)));
+  await mount();
+  expect(calls('/api/cctvs')).toBe(1);
+  await advance(59);
+  expect(calls('/api/cctvs')).toBe(1);
+  await advance(2);
+  expect(calls('/api/cctvs')).toBe(2);
+  list = fail;
+  await advance(60);
+  expect(calls('/api/cctvs')).toBe(3);
+  expect(document.querySelector('.notices')).toBeNull();
+  fetchMock.mockImplementation(base);
+});
+
+test('a tab hidden for over an hour refetches the CCTV list when it becomes visible', async () => {
+  snapshots.push(() => ok(snap(1)));
+  await mount();
+  const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+  document.dispatchEvent(new Event('visibilitychange'));
+  await advance(61);
+  expect(calls('/api/cctvs')).toBe(1);
+  hidden.mockReturnValue(false);
+  document.dispatchEvent(new Event('visibilitychange'));
+  await flush();
+  expect(calls('/api/cctvs')).toBe(2);
+  hidden.mockRestore();
+});
+
+test('with no SSE metrics for interval + 5 minutes, traffic and insights are refetched every interval until SSE returns', async () => {
+  snapshots.push(() => ok(snap(1)));
+  insights = () => ok({ buckets: [], routes: [], incidentsByHour: [], delayMinutes: 60, intervalMinutes: 15 });
+  await mount();
+  expect([calls('/api/traffic'), calls('/api/insights')]).toEqual([1, 1]);
+  await advance(19);
+  expect([calls('/api/traffic'), calls('/api/insights')]).toEqual([1, 1]);
+  await advance(1);
+  expect([calls('/api/traffic'), calls('/api/insights')]).toEqual([2, 2]);
+  await advance(15);
+  expect([calls('/api/traffic'), calls('/api/insights')]).toEqual([3, 3]);
+  await push({ ...metrics(null), intervalMinutes: 15 });
+  await advance(19);
+  expect([calls('/api/traffic'), calls('/api/insights')]).toEqual([3, 3]);
+  await push({ ...metrics(null), intervalMinutes: 15 });
+  await advance(19);
+  expect([calls('/api/traffic'), calls('/api/insights')]).toEqual([3, 3]);
 });

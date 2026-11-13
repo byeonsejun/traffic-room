@@ -6,6 +6,7 @@ import { hhmm } from '@/lib/time';
 import { useMetrics } from '@/store/metrics';
 import { TopBar } from '../TopBar';
 import { useInsights, type InsightsState } from '../useInsights';
+import { useFallbackTick } from '../useFallbackTick';
 import { useMetricsStream } from '../useMetricsStream';
 import { IncidentHours } from './IncidentHours';
 import { KpiTiles } from './KpiTiles';
@@ -20,7 +21,8 @@ import { SlowRoutes } from './SlowRoutes';
 export function Insights() {
   const stream = useMetricsStream();
   const metrics = useMetrics((s) => s.metrics);
-  const insights = useInsights(metrics?.trafficSnapshotId ?? null);
+  const refreshTick = useFallbackTick(stream !== 'off');
+  const insights = useInsights(metrics?.trafficSnapshotId ?? null, refreshTick);
   const { buckets, routes, incidentsByHour, intervalMinutes, loadedAt } = insights.data;
   // SSE 지표가 오기 전에는 /api/insights 가 준 설정값을 쓴다.
   const delayMinutes = metrics?.delayMinutes ?? insights.data.delayMinutes;
@@ -31,7 +33,7 @@ export function Insights() {
     <div className="insights">
       <TopBar
         status={stream === 'open' ? 'open' : 'connecting'} live={stream !== 'off'}
-        delayMinutes={delayMinutes} trafficDataAt={dataAt} trafficTiming={timing} page="insights"
+        collectedAt={metrics?.collectedAt} delayMinutes={delayMinutes} trafficDataAt={dataAt} trafficTiming={timing} page="insights"
       />
       <main className="ins">
         <header className="ins-head">
