@@ -12,6 +12,7 @@ import { Feed } from './Feed';
 import { MapView } from './MapView';
 import { StatsPanel } from './StatsPanel';
 import { TopBar } from './TopBar';
+import { useInsights } from './useInsights';
 import { useTraffic } from './useTraffic';
 
 // 비어 있으면 실시간 서버 없이 스냅샷만 보여 주고, 배지는 "수집본으로 보는 중"에 머문다.
@@ -37,6 +38,8 @@ export function Console() {
   const metrics = useMetrics((s) => s.metrics);
   // 처음 받기가 실패하면 지도는 바탕선만 그리고 범례가 알린다.
   const traffic = useTraffic(metrics?.trafficSnapshotId ?? null);
+  // 왼쪽 평균 속도 추이. 교통 스냅샷이 바뀌면 24시간 요약도 다시 받는다.
+  const buckets = useInsights(metrics?.trafficSnapshotId ?? null);
   const [notices, setNotices] = useState<Partial<Record<NoticeSource, string>>>({});
   const client = useRef<ReturnType<typeof createRealtimeClient> | null>(null);
   const send = useCallback((m: ClientMessage) => client.current?.send(m), []);
@@ -132,8 +135,11 @@ export function Console() {
         delayMinutes={metrics?.delayMinutes ?? delayMinutes}
         trafficDataAt={traffic.dataAt} trafficTiming={trafficTiming}
       />
-      <aside className="left" aria-label="돌발상황 지표">
-        <StatsPanel arrivalId={arrivalId} collectedAt={collectedAt} />
+      <aside className="left" aria-label="교통 · 돌발상황 지표">
+        <StatsPanel
+          arrivalId={arrivalId} collectedAt={collectedAt}
+          delayMinutes={metrics?.delayMinutes ?? delayMinutes} buckets={buckets}
+        />
       </aside>
       <main className="map">
         <MapView speeds={traffic.speeds} trafficDataAt={traffic.dataAt} trafficError={traffic.error} />

@@ -72,15 +72,38 @@ ul { padding: 0; list-style: none; }
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 28px;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
 .left h2, .feed h2 { font-size: 13px; font-weight: 500; color: var(--mute); margin-bottom: 12px; }
+/* 화면의 큰 숫자는 평균 속도 하나. 큰 숫자는 고정폭 숫자를 풀어 자연스러운 글자 간격으로 둔다. */
+.speed .hero {
+  font-weight: 300; font-size: 56px; line-height: 1; color: #fff; letter-spacing: -0.03em;
+  font-variant-numeric: proportional-nums;
+}
+.speed .hero small, .kpi .count small { font-size: 15px; color: var(--mute); margin-left: 6px; letter-spacing: 0; font-weight: 400; }
+.speed .pending { font-size: 15px; line-height: 56px; color: var(--mute); }
+.speed .trend { margin-top: 14px; }
+.speed .trend-range {
+  display: flex; justify-content: space-between; margin-top: 4px;
+  font-size: 11px; color: var(--mute); font-variant-numeric: tabular-nums;
+}
+.speed .recording {
+  display: flex; align-items: center; gap: 8px; margin-top: 14px;
+  font-size: 12px; color: var(--mute); font-variant-numeric: tabular-nums;
+}
+.speed .recording::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--info);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+.levels h2 span::before { content: '·'; margin: 0 6px; }
 .kpi .count {
-  font-weight: 300; font-size: 60px; line-height: 1; color: #fff; letter-spacing: -0.02em;
+  font-weight: 300; font-size: 36px; line-height: 1; color: #fff; letter-spacing: -0.02em;
+  font-variant-numeric: proportional-nums;
   transition: color 0.6s;
 }
-.kpi .count small { font-size: 20px; color: var(--mute); margin-left: 6px; letter-spacing: 0; }
 .kpi .count.is-bump { color: var(--jam); transition-duration: 0.15s; }
 .trow {
   display: grid; grid-template-columns: 76px 1fr 34px; align-items: center; gap: 10px;
@@ -90,7 +113,37 @@ ul { padding: 0; list-style: none; }
 .trow .bar span { display: block; height: 100%; border-radius: 3px; transition: width 0.6s ease; }
 .trow .n { text-align: right; color: var(--mute); }
 .trow.is-zero .name { color: var(--mute); }
+.left .to-insights {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px;
+  font-size: 13px; color: var(--ink); text-decoration: none;
+  transition: background 0.2s, border-color 0.2s;
+}
+.left .to-insights span { color: var(--info); transition: transform 0.2s; }
+.left .to-insights:hover { background: #142030; border-color: #2a3c52; }
+.left .to-insights:hover span { transform: translateX(3px); }
 .left .about { margin-top: auto; font-size: 12px; line-height: 1.6; color: var(--mute); }
+
+/* 차트 틀: "표로 보기"는 차트를 담은 구역의 제목 줄 오른쪽에 붙는다(구역이 기준 위치). */
+.speed, .levels { position: relative; }
+.echart-plot { position: relative; }
+.echart-canvas { width: 100%; height: 100%; }
+.echart-toggle {
+  position: absolute; top: 0; right: 0;
+  font: inherit; font-size: 11px; line-height: 16px; color: var(--mute);
+  background: none; border: 0; padding: 0; cursor: pointer;
+  text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px;
+}
+.echart-toggle:hover, .echart-toggle[aria-expanded='true'] { color: var(--ink); text-decoration-color: var(--mute); }
+.echart-table { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.echart-table caption {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.echart-table th, .echart-table td { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.echart-table thead th { font-weight: 500; color: var(--mute); text-align: right; }
+.echart-table thead th:first-child, .echart-table tbody th { text-align: left; }
+.echart-table tbody th { font-weight: 400; color: var(--mute); }
+.echart-table td { text-align: right; }
 
 /* 지도 */
 .map { position: relative; overflow: hidden; }
@@ -137,7 +190,8 @@ button.ev[aria-pressed='true'] { background: #1a2a3e; }
 
 @media (prefers-reduced-motion: reduce) {
   .ev.is-new, .conn .dot, .conn .dot.is-beat { animation: none !important; }
-  .kpi .count, .trow .bar span { transition: none; }
+  .kpi .count, .trow .bar span, .left .to-insights, .left .to-insights span { transition: none; }
+  .speed .recording::before { animation: none; }
 }
 
 /* 1100px 이하: 지도 → CCTV → 피드 → 지표 */

@@ -14,6 +14,8 @@ vi.hoisted(() => {
 
 // 지도는 WebGL 이 필요해 jsdom 에서 띄우지 않는다. 받은 교통 값만 기록한다.
 const mapProps: Array<{ speeds: Map<string, number> | null; trafficDataAt: string | null; trafficError: boolean }> = [];
+// jsdom 에는 canvas 가 없다. 차트는 그리지 않는다.
+vi.mock('./charts/EChart', () => ({ EChart: () => null }));
 vi.mock('./MapView', () => ({
   MapView: (p: (typeof mapProps)[number]) => {
     mapProps.push(p);
@@ -57,10 +59,12 @@ const hello = (latestId: number): ServerMessage => ({
 
 let snapshots: Array<() => Response>;
 let traffic: () => Response;
+let insights: () => Response;
 const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
   const path = String(input);
   if (path === '/api/cctvs') return ok([]);
   if (path.startsWith('/api/traffic')) return traffic();
+  if (path.startsWith('/api/insights')) return insights();
   const next = snapshots.shift();
   if (!next) throw new Error('unexpected snapshot fetch');
   return next();
@@ -82,6 +86,7 @@ beforeEach(() => {
   mapProps.length = 0;
   snapshots = [];
   traffic = () => ok({ id: null });
+  insights = () => ok({ buckets: [], routes: [], incidentsByHour: [], delayMinutes: 60, intervalMinutes: 60 });
   useConsole.setState(useConsole.getInitialState(), true);
   useMetrics.setState(useMetrics.getInitialState(), true);
 });
@@ -365,4 +370,43 @@ test('metrics naming an older snapshot than the one shown do not refetch', async
   await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60_000); });
   expect(trafficCalls()).toHaveLength(1);
   expect(mapProps.at(-1)!.speeds).toEqual(new Map([['A', 75]]));
+});
+
+const metricsFor = (trafficSnapshotId: number): Metrics => ({
+  trafficSnapshotId, trafficDataAt: '2026-11-13T02:00:00.000Z', nextTrafficAt: null, traffic: null,
+  incidents: { total: 0, byCategory: { accident: 0, breakdown: 0, weather: 0, construction: 0, report: 0, other: 0 } },
+  delayMinutes: 60, intervalMinutes: 60,
+});
+
+test('24-hour insights load on mount and again when the traffic snapshot changes', async () => {
+  snapshots.push(() => ok(snap(1)));
+  insights = () => ok({
+    buckets: [{ dataAt: '2026-11-13T01:00:00.000Z', avgSpeed: 77.6, ok: 9, slow: 2, jam: 1, jamKm: 1 }],
+    routes: [], incidentsByHour: [], delayMinutes: 60, intervalMinutes: 60,
+  });
+  await mount();
+  const insightCalls = () => fetchMock.mock.calls.map(([p]) => String(p)).filter((p) => p.startsWith('/api/insights'));
+  expect(insightCalls()).toEqual(['/api/insights']);
+  // SSE 지표가 아직 없으면 마지막 요약 기록이 평균 속도를 채운다.
+  expect(document.querySelector('.speed .hero')?.textContent).toBe('78km/h');
+
+  act(() => useMetrics.getState().apply(metricsFor(8)));
+  await flush();
+  // 같은 스냅샷을 가리키는 지표가 다시 와도 다시 받지 않는다.
+  act(() => useMetrics.getState().apply({ ...metricsFor(8), nextTrafficAt: '2026-11-13T04:00:00.000Z' }));
+  await flush();
+  expect(insightCalls()).toEqual(['/api/insights', '/api/insights?id=8']);
+});
+
+test('a failed insights refetch keeps the last history', async () => {
+  snapshots.push(() => ok(snap(1)));
+  insights = () => ok({
+    buckets: [{ dataAt: '2026-11-13T01:00:00.000Z', avgSpeed: 80, ok: 9, slow: 2, jam: 1, jamKm: 1 }],
+    routes: [], incidentsByHour: [], delayMinutes: 60, intervalMinutes: 60,
+  });
+  await mount();
+  insights = fail;
+  act(() => useMetrics.getState().apply(metricsFor(9)));
+  await flush();
+  expect(document.querySelector('.speed .hero')?.textContent).toBe('80km/h');
 });

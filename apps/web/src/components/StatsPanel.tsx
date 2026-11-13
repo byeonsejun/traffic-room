@@ -1,17 +1,32 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { Category } from '@traffic-room/shared';
+import Link from 'next/link';
+import { delayLabel, type Category } from '@traffic-room/shared';
 import { CATEGORY_LABEL, categoryColor } from '@/lib/tokens';
 import { hhmm } from '@/lib/time';
 import { useConsole } from '@/store/console';
+import { useMetrics } from '@/store/metrics';
+import { LevelBar } from './charts/LevelBar';
+import { SpeedTrend } from './charts/SpeedTrend';
+import type { TrafficBucket } from './useInsights';
 
 const BUMP_MS = 1200;
 const ORDER = Object.keys(CATEGORY_LABEL) as Category[];
+/** 추이 차트가 채울 시간. 기록이 이보다 적으면 "기록 중 · N/24시간"으로 차 오르는 중임을 알린다. */
+const TREND_HOURS = 24;
 
-export function StatsPanel({ arrivalId, collectedAt }: { arrivalId?: number; collectedAt: string | null }) {
+export function StatsPanel({ arrivalId, collectedAt, delayMinutes, buckets }: {
+  arrivalId?: number;
+  collectedAt: string | null;
+  delayMinutes: number;
+  buckets: TrafficBucket[];
+}) {
   const incidents = useConsole((s) => s.incidents);
   const list = useMemo(() => Object.values(incidents), [incidents]);
+  // 지금 값은 SSE 지표가 먼저, 없으면 마지막 요약 기록. 둘 다 없으면 숫자를 지어내지 않는다.
+  const live = useMetrics((s) => s.metrics?.traffic ?? null);
+  const traffic = live ?? buckets.at(-1) ?? null;
 
   const rows = useMemo(() => {
     const n = Object.fromEntries(ORDER.map((c) => [c, 0])) as Record<Category, number>;
@@ -39,6 +54,27 @@ export function StatsPanel({ arrivalId, collectedAt }: { arrivalId?: number; col
 
   return (
     <>
+      <section className="speed" aria-labelledby="speed-title">
+        <h2 id="speed-title">고속도로 평균 속도</h2>
+        {traffic ? (
+          <p className="hero">{Math.round(traffic.avgSpeed)}<small>km/h</small></p>
+        ) : (
+          <p className="pending">교통 정보 준비 중</p>
+        )}
+        {buckets.length > 1 ? (
+          <SpeedTrend buckets={buckets} />
+        ) : (
+          <p className="recording">기록 중 · {buckets.length}/{TREND_HOURS}시간</p>
+        )}
+      </section>
+      {traffic && (
+        <section className="levels" aria-labelledby="levels-title">
+          <h2 id="levels-title">
+            구간 상태<span>본선 {(traffic.ok + traffic.slow + traffic.jam).toLocaleString('ko-KR')}구간</span>
+          </h2>
+          <LevelBar counts={traffic} />
+        </section>
+      )}
       <section className="kpi" aria-labelledby="kpi-title">
         <h2 id="kpi-title">진행 중인 돌발상황</h2>
         <p className={`count${bump ? ' is-bump' : ''}`} aria-live="polite">
@@ -60,8 +96,9 @@ export function StatsPanel({ arrivalId, collectedAt }: { arrivalId?: number; col
           ))}
         </ul>
       </section>
+      <Link className="to-insights" href="/insights">분석 보기 <span aria-hidden="true">→</span></Link>
       <p className="about">
-        공공 교통 정보를 약 1시간 늦춰, 일어난 순서대로 다시 보여 줘요.
+        공공 교통 정보를 {delayLabel(delayMinutes)}으로, 일어난 순서대로 다시 보여 줘요.
         {collectedAt && <> 마지막 수집은 {hhmm(collectedAt)}이에요.</>}
       </p>
     </>
