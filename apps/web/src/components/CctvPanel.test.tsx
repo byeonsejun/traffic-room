@@ -3,13 +3,15 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import type { Cctv, Incident } from '@traffic-room/shared';
 import { useConsole } from '@/store/console';
 
-type Inst = { handlers: Record<string, (...a: unknown[]) => void>; loaded: string[]; destroyed: boolean };
+type Inst = { handlers: Record<string, (...a: unknown[]) => void>; loaded: string[]; destroyed: boolean; recovered: number };
 const hlsState = vi.hoisted(() => ({ instances: [] as Inst[] }));
 vi.mock('hls.js', () => {
   class FakeHls {
     static isSupported() { return true; }
     static Events = { ERROR: 'hlsError', MANIFEST_PARSED: 'hlsManifestParsed' };
-    inst: Inst = { handlers: {}, loaded: [], destroyed: false };
+    static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' };
+    inst: Inst = { handlers: {}, loaded: [], destroyed: false, recovered: 0 };
+    recoverMediaError() { this.inst.recovered += 1; }
     constructor() { hlsState.instances.push(this.inst); }
     on(ev: string, fn: (...a: unknown[]) => void) { this.inst.handlers[ev] = fn; }
     loadSource(u: string) { this.inst.loaded.push(u); }
@@ -183,4 +185,38 @@ test('a fresh url for the same CCTV clears the unavailable report', async () => 
   expect(useConsole.getState().cctvUnavailable).toBeNull();
   await ready(2);
   expect(live()!.loaded).toEqual(['https://x/seocho-new.m3u8']);
+});
+
+const mediaFatal = () => live()!.handlers['hlsError']!('hlsError', { fatal: true, type: 'mediaError' });
+
+test('the guidance lives in a status region that is always there, so screen readers announce it', async () => {
+  render(<CctvPanel cctvs={cams} send={vi.fn()} />);
+  await ready(1);
+  const status = screen.getByRole('status');
+  expect(status.textContent).toBe('');
+  act(() => fatal());
+  answer('seocho', 'https://x/seocho.m3u8', 'cached');
+  expect(screen.getByRole('status')).toBe(status);
+  expect(status.textContent).toBe(GUIDE);
+});
+
+test('the badge says 연결 안 됨 instead of 실시간 when the video cannot play', () => {
+  useConsole.setState({ cctvUrlOverride: { seocho: null } });
+  const { container } = render(<CctvPanel cctvs={cams} send={vi.fn()} />);
+  expect(screen.queryByText('실시간')).toBeNull();
+  const badge = container.querySelector('.live')!;
+  expect(badge.textContent).toBe('연결 안 됨');
+  expect(badge.classList.contains('is-down')).toBe(true);
+});
+
+test('a fatal media error is first recovered in place; only a second one asks for a new url', async () => {
+  const send = vi.fn();
+  render(<CctvPanel cctvs={cams} send={send} />);
+  await ready(1);
+  act(() => mediaFatal());
+  expect(live()!.recovered).toBe(1);
+  expect(send).not.toHaveBeenCalled();
+  act(() => mediaFatal());
+  expect(live()!.recovered).toBe(1);
+  expect(send).toHaveBeenCalledTimes(1);
 });

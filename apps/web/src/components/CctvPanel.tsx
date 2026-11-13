@@ -67,8 +67,16 @@ export function CctvPanel({ cctvs, send }: { cctvs: Cctv[]; send: (m: ClientMess
       if (Hls.isSupported()) {
         const h = new Hls({ lowLatencyMode: true });
         hls = h;
-        h.on(Hls.Events.ERROR, (_ev: unknown, data: { fatal?: boolean }) => {
-          if (data?.fatal) onFatal();
+        // 미디어 오류(디코딩 등)는 주소를 새로 받지 않고 그 자리에서 한 번 되살려 본다(hls.js 권장 순서). 또 나면 아래로.
+        let recovered = false;
+        h.on(Hls.Events.ERROR, (_ev: unknown, data: { fatal?: boolean; type?: string }) => {
+          if (!data?.fatal) return;
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !recovered) {
+            recovered = true;
+            h.recoverMediaError();
+            return;
+          }
+          onFatal();
         });
         h.loadSource(url);
         h.attachMedia(video);
@@ -125,16 +133,19 @@ export function CctvPanel({ cctvs, send }: { cctvs: Cctv[]; send: (m: ClientMess
     }
   }, []);
   const big = native || overlay;
+  const down = !url || failed;
 
   return (
     <div ref={rootRef} className={`cctv-panel${overlay ? ' is-overlay' : ''}`}>
-      <div className={`cam${!url || failed ? ' failed' : ''}`}>
+      <div className={`cam${down ? ' failed' : ''}`}>
         <video ref={videoRef} muted playsInline autoPlay />
-        <span className="live">실시간</span>
+        {/* 영상이 안 나오는데 "실시간"이라 하지 않는다. 지도 핀과 같은 회색 "연결 안 됨". */}
+        <span className={`live${down ? ' is-down' : ''}`}>{down ? '연결 안 됨' : '실시간'}</span>
         <button type="button" className="cam-full" onClick={toggle}>
           {big ? '작게 보기' : '크게 보기'}
         </button>
-        {(!url || failed) && <div className="err">{GUIDE}</div>}
+        {/* 안내 영역은 늘 두고 글만 바꿔야 화면 낭독기가 읽어 준다. 비어 있으면 CSS 로 숨긴다. */}
+        <div className="err" role="status">{down ? GUIDE : ''}</div>
       </div>
       <div className="camname">{active?.name ?? ''}</div>
       {candidates.length > 1 && (
