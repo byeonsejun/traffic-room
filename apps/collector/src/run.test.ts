@@ -74,6 +74,22 @@ describe('runEvents', () => {
     }
   });
 
+  test('prunes incidents cleared 8 days ago after a successful run', async () => {
+    const db = await createTestDb();
+    const old = new Date(at('22:05').getTime() - 8 * 86_400_000);
+    await db.query(
+      `insert into incidents (key, category, road_name, direction, detail, message, lanes_blocked, lon, lat,
+         started_at, first_seen_at, last_seen_at, arrive_at, cleared_at)
+       values ('gone', 'accident', 'r', 'd', 'x', 'm', '', 127, 37, $1, $1, $1, null, $1)`,
+      [old],
+    );
+    await db.query(`insert into event_log (kind, incident_key, emit_at) values ('cleared', 'gone', $1)`, [old]);
+    const its = fakeIts({ events: vi.fn().mockResolvedValue([inc('a')]) });
+    await runEvents({ db, its, timing, now: () => at('22:05') });
+    expect(await db.query("select 1 from incidents where key = 'gone'")).toHaveLength(0);
+    expect(await db.query("select 1 from event_log where incident_key = 'gone'")).toHaveLength(0);
+  });
+
   test('skips when the configured monthly limit is reached', async () => {
     const db = await createTestDb();
     for (let i = 0; i < 3; i++) await recordRun(db, 'events', true, 1, new Date(at('00:00').getTime() + i * 1000));

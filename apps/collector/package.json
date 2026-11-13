@@ -6,11 +6,13 @@
   "scripts": {
     "events": "node src/run-events.ts",
     "cctvs": "node src/run-cctvs.ts",
+    "traffic": "node src/run-traffic.ts",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "oxlint -c ../../.oxlintrc.json --deny-warnings src"
   },
   "dependencies": {
     "@traffic-room/db": "workspace:*",
+    "@traffic-room/highways": "workspace:*",
     "@traffic-room/its": "workspace:*",
     "@traffic-room/shared": "workspace:*"
   }

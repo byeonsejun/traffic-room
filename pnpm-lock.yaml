@@ -184,6 +184,9 @@ importers:
       '@traffic-room/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@traffic-room/highways':
+        specifier: workspace:*
+        version: link:../../packages/highways
       '@traffic-room/its':
         specifier: workspace:*
         version: link:../../packages/its
@@ -276,6 +279,8 @@ importers:
       '@traffic-room/shared':
         specifier: workspace:*
         version: link:../shared
+
+  packages/highways: {}
 
   packages/its:
     dependencies:

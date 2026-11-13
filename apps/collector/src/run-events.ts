@@ -1,5 +1,5 @@
 import type { Timing } from '@traffic-room/shared';
-import { applyIncidentPlan, canCall, getActiveKeys, lastCollectedAt, recordRun, type Db } from '@traffic-room/db';
+import { applyIncidentPlan, canCall, getActiveKeys, lastCollectedAt, pruneHistory, recordRun, type Db } from '@traffic-room/db';
 import type { ItsClient } from '@traffic-room/its';
 import { depsFromEnv, errorCode } from './env.ts';
 import { planIncidentChanges } from './plan.ts';
@@ -20,6 +20,7 @@ export async function runEvents({ db, its, now, timing }: RunDeps): Promise<Even
     const plan = planIncidentChanges({ activeKeys, fetched, collectedAt, prevCollectedAt: prev, delayMinutes: timing.delayMinutes });
     await applyIncidentPlan(db, plan, collectedAt);
     await recordRun(db, 'events', true, fetched.length, collectedAt);
+    await pruneHistory(db, collectedAt);
     return { status: 'ok', arrived: plan.arriving.length, cleared: plan.cleared.length };
   } catch (e) {
     await recordRun(db, 'events', false, 0, collectedAt);
