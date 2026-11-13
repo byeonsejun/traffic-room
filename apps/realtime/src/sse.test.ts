@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import type { Metrics } from '@traffic-room/shared';
-import type { MetricsState } from './metrics.ts';
+import { readTiming, type Metrics } from '@traffic-room/shared';
+import { createMetricsState, type MetricsLoad, type MetricsState } from './metrics.ts';
 import { registerSse } from './sse.ts';
 
 const ORIGIN = 'http://localhost:3000';
@@ -22,6 +22,7 @@ function fakeMetrics(initial: Metrics) {
   const subs = new Set<(m: Metrics) => void>();
   const state: MetricsState & { set(m: Metrics): void; subscribers(): number } = {
     current: () => value,
+    ready: () => true,
     reload: async () => {},
     onEvent: () => {},
     subscribe(fn) {
@@ -44,9 +45,9 @@ afterEach(async () => {
   apps = [];
 });
 
-async function start(metrics: MetricsState) {
+async function start(metrics: MetricsState, pingMs?: number) {
   const app = Fastify();
-  registerSse(app, metrics, [ORIGIN]);
+  registerSse(app, metrics, [ORIGIN], { pingMs });
   await app.listen({ port: 0, host: '127.0.0.1' });
   apps.push(app);
   const addr = app.server.address();
@@ -131,4 +132,54 @@ test('서버를 닫으면 열린 스트림도 끝난다', async () => {
   apps = [];
   await expect(events.next()).rejects.toThrow('stream ended');
   expect(metrics.subscribers()).toBe(0);
+});
+
+test('첫 조회 전에는 200 과 헤더만 보내고, 조회가 끝나면 DB 값으로 첫 metrics 이벤트를 보낸다', async () => {
+  let resolve!: (v: MetricsLoad) => void;
+  const metrics = createMetricsState({
+    load: () => new Promise<MetricsLoad>((r) => (resolve = r)),
+    now: () => new Date('2026-11-13T03:00:00.000Z'),
+    timing: readTiming({}),
+  });
+  const { url } = await start(metrics);
+  const loading = metrics.reload();
+  const res = await fetch(url, { headers: { origin: ORIGIN } });
+  expect(res.status).toBe(200);
+  expect(metrics.ready()).toBe(false);
+
+  const events = reader(res.body!);
+  const byCategory = { ...base.incidents.byCategory, construction: 2 };
+  resolve({
+    shown: {
+      id: 7,
+      dataAt: new Date('2026-11-13T02:00:00.000Z'),
+      showAt: new Date('2026-11-13T02:55:00.000Z'),
+      summary: { avgSpeed: 71, ok: 5, slow: 1, jam: 0, jamKm: 0 },
+    },
+    upcoming: [],
+    incidents: { total: 2, byCategory },
+  });
+  await loading;
+  const first = await events.next();
+  expect(first.event).toBe('metrics');
+  expect(first.data.trafficSnapshotId).toBe(7);
+  expect(first.data.traffic?.avgSpeed).toBe(71);
+  expect(first.data.incidents).toEqual({ total: 2, byCategory });
+  metrics.stop();
+});
+
+test('pingMs 마다 주석 줄로 연결을 유지한다', async () => {
+  const { url } = await start(fakeMetrics(base), 20);
+  const ac = new AbortController();
+  const res = await fetch(url, { headers: { origin: ORIGIN }, signal: ac.signal });
+  const r = res.body!.getReader();
+  const dec = new TextDecoder();
+  let text = '';
+  while (!text.includes(': ping\n\n')) {
+    const { value, done } = await r.read();
+    if (done) break;
+    text += dec.decode(value, { stream: true });
+  }
+  expect(text).toContain(': ping\n\n');
+  ac.abort();
 });

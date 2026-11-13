@@ -8,7 +8,8 @@ export interface MetricsLoad {
 }
 
 export interface MetricsDeps {
-  load: () => Promise<MetricsLoad>;
+  /** `at` 기준으로 공개 중 · 다음 30분 · 진행 중 돌발을 읽는다. */
+  load: (at: Date) => Promise<MetricsLoad>;
   now: () => Date;
   timing: Timing;
   setTimer?: typeof setTimeout;
@@ -17,6 +18,8 @@ export interface MetricsDeps {
 
 export interface MetricsState {
   current(): Metrics;
+  /** 첫 조회가 성공했는지. 그 전에는 지어낸 값(빈 0)을 내보내지 않는다. */
+  ready(): boolean;
   reload(): Promise<void>;
   onEvent(e: LogEvent): void;
   subscribe(fn: (m: Metrics) => void): () => void;
@@ -27,6 +30,10 @@ export interface MetricsState {
 function countsFrom(src?: Partial<Record<Category, number>>): Record<Category, number> {
   return Object.fromEntries(categorySchema.options.map((c) => [c, src?.[c] ?? 0])) as Record<Category, number>;
 }
+
+/** 첫 조회가 실패하면 30초, 60초, … 로 늘려 다시 시도하고 평소 주기(30분)를 넘기지 않는다. */
+const FIRST_RETRY_MS = 30_000;
+const MAX_RETRY_MS = 30 * 60_000;
 
 /**
  * 화면 전체가 함께 보는 지표 상태.
@@ -48,6 +55,11 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
   /** reload · stop 마다 바뀐다. 조회 중에 바뀌었으면 그 결과는 버린다. */
   let generation = 0;
   let stopped = false;
+  let loaded = false;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryMs = FIRST_RETRY_MS;
+  /** 조회 중에 받은 송출. 결과를 덮어쓴 뒤 조회 기준 시각보다 나중 것만 다시 반영한다. */
+  let inFlight: { at: number; events: LogEvent[] } | null = null;
 
   function current(): Metrics {
     return {
@@ -63,10 +75,12 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
 
   let lastJson = JSON.stringify(current());
 
-  function notify() {
+  /** force 는 첫 조회 성공 때: 값이 빈 상태와 같아도 "준비됨"을 알려야 한다. */
+  function notify(force = false) {
+    if (!loaded) return;
     const m = current();
     const json = JSON.stringify(m);
-    if (json === lastJson) return;
+    if (json === lastJson && !force) return;
     lastJson = json;
     for (const fn of subs) {
       try {
@@ -78,29 +92,38 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
   }
 
   /** showAt 이 지난 upcoming 을 차례로 공개하고, 남은 것 중 가장 이른 시각에 다시 깨어난다. */
-  function publishDue() {
+  function publishDue(force = false) {
     if (timer !== undefined) clearTimer(timer);
     timer = undefined;
     if (stopped) return;
     const nowMs = deps.now().getTime();
     while (upcoming[0] && upcoming[0].showAt.getTime() <= nowMs) shown = upcoming.shift() ?? shown;
-    notify();
+    notify(force);
     const next = upcoming[0];
     if (next) timer = setTimer(publishDue, Math.max(0, next.showAt.getTime() - nowMs));
   }
 
   async function reload(): Promise<void> {
+    if (stopped) return;
     const gen = ++generation;
+    const at = deps.now();
+    const buffer = { at: at.getTime(), events: [] as LogEvent[] };
+    inFlight = buffer;
     let data: MetricsLoad;
     try {
-      data = await deps.load();
+      data = await deps.load(at);
     } catch (err) {
+      if (inFlight === buffer) inFlight = null;
       // 메시지에 접속 정보가 섞일 수 있어 이름만 남긴다.
       const name = err instanceof Error ? err.name : 'UnknownError';
-      console.error(`[metrics] 지표 조회 실패(${name}), 다음 주기에 다시 시도`);
+      console.error(`[metrics] 지표 조회 실패(${name}), 다시 시도`);
+      if (gen === generation && !loaded && !stopped) scheduleRetry();
       return;
     }
+    if (inFlight === buffer) inFlight = null;
     if (gen !== generation || stopped) return;
+    if (retryTimer !== undefined) clearTimer(retryTimer);
+    retryTimer = undefined;
 
     // 조회하는 사이 showAt 이 지난 upcoming 은 publishDue 가 shown 으로 옮긴다. 그래서 타이머가
     // 이미 공개한 스냅샷도 다시 알림이 나가지 않는다(값이 같으면 notify 가 건너뜀).
@@ -110,25 +133,46 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
       .sort((a, b) => a.showAt.getTime() - b.showAt.getTime());
     byCategory = countsFrom(data.incidents.byCategory);
     total = data.incidents.total;
-    publishDue();
+    // 조회 기준 시각 이후에 송출된 것은 DB 값에 아직 없으니 다시 더한다. 그 전 것은 이미 들어 있다.
+    for (const e of buffer.events) if (Date.parse(e.emitAt) > buffer.at) applyEvent(e);
+    const first = !loaded;
+    loaded = true;
+    publishDue(first);
+  }
+
+  function scheduleRetry() {
+    if (retryTimer !== undefined) clearTimer(retryTimer);
+    const delay = retryMs;
+    retryMs = Math.min(retryMs * 2, MAX_RETRY_MS);
+    retryTimer = setTimer(() => {
+      retryTimer = undefined;
+      void reload();
+    }, delay);
   }
 
   function onEvent(e: LogEvent) {
+    inFlight?.events.push(e);
+    if (applyEvent(e)) notify();
+  }
+
+  /** 돌발 수만 고친다. 바뀌었으면 true. */
+  function applyEvent(e: LogEvent): boolean {
     const c = e.incident.category;
     if (e.kind === 'arrived') {
       byCategory[c] += 1;
       total += 1;
     } else {
       // 해제가 도착보다 먼저 와도(재조회 직후 등) 음수로 내려가지 않게 한다.
-      if (byCategory[c] === 0) return;
+      if (byCategory[c] === 0) return false;
       byCategory[c] -= 1;
       total = Math.max(0, total - 1);
     }
-    notify();
+    return true;
   }
 
   return {
     current,
+    ready: () => loaded,
     reload,
     onEvent,
     subscribe(fn) {
@@ -142,6 +186,9 @@ export function createMetricsState(deps: MetricsDeps): MetricsState {
       generation += 1;
       if (timer !== undefined) clearTimer(timer);
       timer = undefined;
+      if (retryTimer !== undefined) clearTimer(retryTimer);
+      retryTimer = undefined;
+      inFlight = null;
       subs.clear();
     },
   };

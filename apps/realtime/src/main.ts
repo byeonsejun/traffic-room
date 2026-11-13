@@ -28,8 +28,7 @@ const RELOAD_MINUTES = 30;
 // 지표도 스케줄러와 같은 30분 주기로만 DB 를 읽는다(Neon 자동 일시정지 유지).
 // 그 사이 공개될 교통 스냅샷은 이때 미리 읽어 두고 showAt 에 맞춰 내보낸다.
 const metrics = createMetricsState({
-  load: async () => {
-    const at = now();
+  load: async (at) => {
     const until = new Date(at.getTime() + RELOAD_MINUTES * 60_000);
     const [shown, upcoming, incidents] = await Promise.all([
       shownTrafficSnapshot(db, at),

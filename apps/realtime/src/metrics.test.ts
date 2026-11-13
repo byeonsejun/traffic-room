@@ -32,7 +32,7 @@ function ev(id: number, kind: LogEvent['kind'], category: Category = 'accident')
 
 type Loaded = { shown: TrafficSnapshotRow | null; upcoming: TrafficSnapshotRow[]; incidents: Metrics['incidents'] };
 
-function make(load: () => Promise<Loaded>) {
+function make(load: (at: Date) => Promise<Loaded>) {
   return createMetricsState({
     load,
     now: () => new Date(),
@@ -175,4 +175,84 @@ test('stop 뒤에는 타이머가 울리지 않는다', async () => {
   await vi.advanceTimersByTimeAsync(10 * MIN);
   expect(fn).not.toHaveBeenCalled();
   expect(m.current().trafficSnapshotId).toBe(1);
+});
+
+test('첫 조회 전에는 구독자를 부르지 않고, 첫 조회가 성공하면 값이 비어 있어도 한 번 알린다', async () => {
+  const m = make(async () => ({ shown: null, upcoming: [], incidents: { total: 0, byCategory: zero() } }));
+  const fn = vi.fn();
+  m.subscribe(fn);
+  m.onEvent(ev(1, 'arrived'));
+  m.onEvent(ev(2, 'cleared'));
+  expect(m.ready()).toBe(false);
+  expect(fn).not.toHaveBeenCalled();
+
+  await m.reload();
+  expect(m.ready()).toBe(true);
+  expect(fn).toHaveBeenCalledTimes(1);
+  expect(fn.mock.calls[0]?.[0]).toMatchObject({ traffic: null, incidents: { total: 0 } });
+  m.stop();
+});
+
+test('첫 조회가 실패하면 30초, 60초 뒤에 다시 시도하고, 성공하면 멈춘다', async () => {
+  const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+  let calls = 0;
+  const m = make(async () => {
+    calls += 1;
+    if (calls <= 2) throw new Error('down');
+    return { shown: snap(1, -30, 80), upcoming: [], incidents: { total: 0, byCategory: zero() } };
+  });
+  await m.reload();
+  expect(calls).toBe(1);
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(calls).toBe(2);
+  await vi.advanceTimersByTimeAsync(59_000);
+  expect(calls).toBe(2);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(calls).toBe(3);
+  expect(m.ready()).toBe(true);
+  expect(m.current().trafficSnapshotId).toBe(1);
+
+  await vi.advanceTimersByTimeAsync(60 * MIN);
+  expect(calls).toBe(3);
+  err.mockRestore();
+  m.stop();
+});
+
+test('재시도 간격은 30분을 넘지 않는다', async () => {
+  const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+  let calls = 0;
+  const m = make(async () => {
+    calls += 1;
+    throw new Error('down');
+  });
+  await m.reload();
+  // 30s, 60s, 2m, 4m, 8m, 16m, 그다음은 32m 이 아니라 30m
+  await vi.advanceTimersByTimeAsync((0.5 + 1 + 2 + 4 + 8 + 16) * MIN);
+  expect(calls).toBe(7);
+  await vi.advanceTimersByTimeAsync(30 * MIN);
+  expect(calls).toBe(8);
+  err.mockRestore();
+  m.stop();
+});
+
+test('조회 중에 받은 송출은 조회 기준 시각 이후 것만 DB 결과 위에 다시 더한다', async () => {
+  let resolve!: (v: Loaded) => void;
+  let loadedAt: Date | undefined;
+  const m = make((at) => {
+    loadedAt = at;
+    return new Promise<Loaded>((r) => (resolve = r));
+  });
+  const loading = m.reload();
+  expect(loadedAt?.getTime()).toBe(T0.getTime());
+
+  await vi.advanceTimersByTimeAsync(MIN);
+  // 늦게 나간 송출(emitAt 이 조회 기준보다 앞): DB 값에 이미 들어 있다.
+  m.onEvent({ ...ev(1, 'arrived', 'construction'), emitAt: new Date(T0.getTime() - 5 * MIN).toISOString() });
+  // 조회 기준 뒤의 송출: DB 값에 없다.
+  m.onEvent({ ...ev(2, 'arrived', 'accident'), emitAt: new Date(T0.getTime() + MIN).toISOString() });
+
+  resolve({ shown: null, upcoming: [], incidents: { total: 3, byCategory: { ...zero(), construction: 3 } } });
+  await loading;
+  expect(m.current().incidents).toEqual({ total: 4, byCategory: { ...zero(), construction: 3, accident: 1 } });
+  m.stop();
 });
