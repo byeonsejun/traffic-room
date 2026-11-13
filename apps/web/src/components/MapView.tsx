@@ -9,6 +9,7 @@ import { toGeoJson as highwaysGeoJson, speedGeoJson, type HighwaysFile } from '@
 import { logFailure } from '@/lib/log';
 import { hhmm } from '@/lib/time';
 import { incidentTitle } from '@/lib/incident';
+import { retryFailedTiles } from '@/lib/tile-retry';
 import { TIP_EDGE, tipSpot } from '@/lib/tip';
 import { CATEGORY_LABEL, categoryColor, tokens } from '@/lib/tokens';
 import { isLoudArrival, useConsole } from '@/store/console';
@@ -408,6 +409,7 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
     let cancelled = false;
     let map: MlMap | null = null;
     let motion: MediaQueryList | null = null;
+    let stopRetry: (() => void) | null = null;
     const ac = new AbortController();
     const pulses = markers.current;
 
@@ -432,6 +434,7 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
         attributionControl: { compact: true },
       });
       map.touchZoomRotate.disableRotation();
+      stopRetry = retryFailedTiles(map);
       map.addControl(new ml.NavigationControl({ showCompass: false }), 'bottom-right');
       mapRef.current = map;
 
@@ -526,6 +529,7 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
       cancelled = true;
       ac.abort();
       motion?.removeEventListener('change', onMotionChange);
+      stopRetry?.();
       flow.halt();
       pulses.forEach((m) => m.remove());
       pulses.clear();

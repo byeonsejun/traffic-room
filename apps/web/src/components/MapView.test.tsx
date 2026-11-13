@@ -62,6 +62,7 @@ const h = vi.hoisted(() => {
     }
     updateImage = vi.fn();
     triggerRepaint = vi.fn();
+    refreshTiles = vi.fn();
     addSource(id: string, spec?: { data?: unknown }) {
       this.sources.set(id, { setData: vi.fn(), data: spec?.data });
     }
@@ -786,4 +787,13 @@ test('flow lines draw a pattern image per level, not a dasharray (changing a das
   }
   expect([...map.images]).toEqual(['flow-0', 'flow-1', 'flow-2', 'flow-3', 'flow-4']);
   expect(map.setPaintProperty.mock.calls.some(([, prop]) => prop === 'line-dasharray')).toBe(false);
+});
+
+test('the map retries base-map tiles that failed to load instead of leaving a hole', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const { map } = await mountLoaded();
+  act(() => map.handlers.get('error')!({ error: new Error('Failed to fetch'), sourceId: 'openmaptiles', tile: { tileID: { canonical: { z: 7, x: 109, y: 50 } } } }));
+  act(() => { vi.advanceTimersByTime(30_000); });
+  expect(map.refreshTiles).toHaveBeenCalledWith('openmaptiles', [{ z: 7, x: 109, y: 50 }]);
+  vi.useRealTimers();
 });
