@@ -4,7 +4,7 @@ import type { Db } from './db.ts';
 
 export const schemaSql = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
 
-const TABLES = 'incidents, event_log, collector_runs, cctvs';
+const TABLES = 'incidents, event_log, collector_runs, cctvs, traffic_snapshots, link_speeds, traffic_buckets, route_buckets';
 
 // PGlite(WASM) 시작은 테스트를 여러 파일 동시에 돌리면 수 초씩 걸린다. 그래서 테스트 파일(모듈)마다
 // 인스턴스 하나를 만들어 두고, 부를 때마다 모든 표를 비우고 id 를 1부터 다시 세게 해서 돌려준다.
