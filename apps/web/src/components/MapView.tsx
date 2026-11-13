@@ -148,7 +148,8 @@ type LivePin = {
 function createLivePin(ml: typeof import('maplibre-gl'), map: MlMap, at: [number, number]): LivePin {
   const el = document.createElement('div');
   el.className = 'live-pin';
-  el.setAttribute('role', 'img');
+  // 보여 주기만 하는 표시다. CCTV 이름은 패널에 있으니 스크린 리더와 포인터 모두 지나치게 한다(CSS 도 pointer-events: none).
+  el.setAttribute('aria-hidden', 'true');
   const label = document.createElement('span');
   label.className = 'live-pin__label';
   const tail = document.createElement('span');
@@ -429,19 +430,27 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
     }
   }, [ready, camLon, camLat]);
 
+  // 보는 중에 동작 줄이기 설정을 바꾸면 핀 맥박도 바로 따라 켜고 끈다.
+  const [still, setStill] = useState(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia(REDUCED_MOTION);
+    const sync = () => setStill(prefersReducedMotion());
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+
   // 패널이 이 CCTV 를 틀지 못하면 핀도 회색으로 바꾸고 "실시간"이라 하지 않는다.
-  const camName = cctv?.name;
+  const hasCam = !!cctv;
   const down = !!cctv && cctvUnavailable === cctv.id;
   useEffect(() => {
     const pin = livePin.current;
-    if (!ready || !pin || camName === undefined) return;
+    if (!ready || !pin || !hasCam) return;
     pin.label.textContent = down ? '연결 안 됨' : '실시간';
-    const desc = `지금 보는 CCTV ${camName} · ${down ? '영상 연결 안 됨' : '실시간 영상'}`;
-    pin.el.title = desc;
-    pin.el.setAttribute('aria-label', desc);
     pin.el.classList.toggle('is-down', down);
-    pin.el.classList.toggle('is-pulsing', !down && !prefersReducedMotion());
-  }, [ready, camName, camLon, camLat, down]);
+    pin.el.classList.toggle('is-pulsing', !down && !still);
+  }, [ready, hasCam, camLon, camLat, down, still]);
 
   useEffect(() => {
     const top = feed[0];

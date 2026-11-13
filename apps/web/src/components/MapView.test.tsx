@@ -352,7 +352,9 @@ test('one live pin sits on the active CCTV, anchored at its bottom', async () =>
   expect(pins[0]!.lngLats.at(-1)).toEqual([127.0, 37.48]);
   const el = pins[0]!.element;
   expect(el.textContent).toBe('실시간');
-  expect(el.title).toContain('[경부선] 서초');
+  expect(el.getAttribute('aria-hidden')).toBe('true');
+  expect(el.hasAttribute('role')).toBe(false);
+  expect(el.hasAttribute('aria-label')).toBe(false);
   expect(el.hasAttribute('tabindex')).toBe(false);
   expect(el.classList.contains('is-down')).toBe(false);
 });
@@ -367,7 +369,6 @@ test('the pin follows the active CCTV: incident → nearest, chip → that one (
   act(() => useConsole.getState().setCctv('near2'));
   expect(pin.lngLats.at(-1)).toEqual([127.18, 36.78]);
   expect(livePins()).toHaveLength(1);
-  expect(pin.element.title).toContain('[경부선] 안성');
 });
 
 test('with motion the pin glides to the new CCTV and lands exactly on it', async () => {
@@ -420,4 +421,26 @@ test('no CCTVs, no pin; unmount removes the pin', async () => {
   const pin = livePins()[0]!;
   view.unmount();
   expect(pin.removed).toBe(true);
+});
+
+test('turning reduced motion on or off while watching toggles the pulse right away', async () => {
+  await mountLoaded(withCams);
+  const el = livePins()[0]!.element;
+  expect(el.classList.contains('is-pulsing')).toBe(true);
+  act(() => setReduce(true));
+  expect(el.classList.contains('is-pulsing')).toBe(false);
+  act(() => setReduce(false));
+  expect(el.classList.contains('is-pulsing')).toBe(true);
+});
+
+test('unmounting mid-glide cancels the pending frame', async () => {
+  const cancel = vi.fn();
+  vi.stubGlobal('cancelAnimationFrame', cancel);
+  vi.stubGlobal('requestAnimationFrame', () => 4242);
+  useConsole.setState({ incidents: { a: inc('a', 'accident', 127.171, 36.79) } });
+  const { view } = await mountLoaded(withCams);
+  act(() => useConsole.getState().select('a'));
+  cancel.mockClear();
+  view.unmount();
+  expect(cancel).toHaveBeenCalledWith(4242);
 });

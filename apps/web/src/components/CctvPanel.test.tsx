@@ -172,3 +172,15 @@ test('a CCTV with no url is reported as unavailable', () => {
   render(<CctvPanel cctvs={cams} send={vi.fn()} />);
   expect(useConsole.getState().cctvUnavailable).toBe('seocho');
 });
+
+test('a fresh url for the same CCTV clears the unavailable report', async () => {
+  render(<CctvPanel cctvs={cams} send={vi.fn()} />);
+  await ready(1);
+  act(() => fatal());
+  answer('seocho', 'https://x/seocho.m3u8', 'cached');
+  expect(useConsole.getState().cctvUnavailable).toBe('seocho');
+  answer('seocho', 'https://x/seocho-new.m3u8', 'refreshed');
+  expect(useConsole.getState().cctvUnavailable).toBeNull();
+  await ready(2);
+  expect(live()!.loaded).toEqual(['https://x/seocho-new.m3u8']);
+});

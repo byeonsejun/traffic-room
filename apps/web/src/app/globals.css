@@ -272,11 +272,11 @@ button.ev[aria-pressed='true'] { background: #1a2a3e; }
 .maplibregl-marker.live-pin {
   --pin: var(--jam);
   z-index: 3; display: flex; flex-direction: column; align-items: center;
-  pointer-events: none; cursor: default;
+  /* 지도 끌기 · 돌발 점 누르기를 막지 않게 핀 전체가 포인터를 지나보낸다. */
+  pointer-events: none;
 }
 .live-pin[hidden] { display: none; }
 .live-pin__label {
-  pointer-events: auto;
   font-family: var(--font-plex), "IBM Plex Sans KR", system-ui, sans-serif;
   font-weight: 600; line-height: 16px; letter-spacing: 0.01em; white-space: nowrap;
   box-shadow: 0 0 0 1px var(--asphalt), 0 4px 12px rgb(0 0 0 / 0.5);
