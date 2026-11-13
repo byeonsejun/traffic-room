@@ -10,7 +10,8 @@
     "test": "vitest run",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "oxlint -c .oxlintrc.json --deny-warnings scripts && pnpm -r --if-present lint",
-    "db:migrate": "pnpm --filter @traffic-room/db migrate"
+    "db:migrate": "pnpm --filter @traffic-room/db migrate",
+    "highways:build": "node packages/highways/src/cli.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
