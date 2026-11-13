@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { GeoJSONSource, MapSourceDataEvent, Map as MlMap, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Cctv, Incident } from '@traffic-room/shared';
-import { FLOW_LEVELS, SPEED_SETS, dashAt, flowLayerId, prefersReducedMotion, startFlow, type SpeedSet } from '@/lib/flow';
+import { FLOW_LEVELS, SPEED_SETS, addFlowImages, flowImageId, flowLayerId, prefersReducedMotion, startFlow, type SpeedSet } from '@/lib/flow';
 import { toGeoJson as highwaysGeoJson, speedGeoJson, type HighwaysFile } from '@/lib/highways';
 import { logFailure } from '@/lib/log';
 import { hhmm } from '@/lib/time';
@@ -45,8 +45,6 @@ const toGeoJson = (incidents: Record<string, Incident>) => ({
 const BASE_COLOR = '#3D4F66';
 // 단계 경계는 @traffic-room/shared 의 speedLevel 과 같다(정체 < 40 ≤ 서행 < 70 ≤ 원활).
 const speedColor = ['step', ['get', 's'], tokens.jam, 40, tokens.slow, 70, tokens.flow];
-// 흐르는 점선은 같은 색을 밝힌 빛줄기.
-const flowColor = ['step', ['get', 's'], '#FFC4C5', 40, '#FFE6AE', 70, '#C4F8DB'];
 const hasSpeed = ['==', ['typeof', ['get', 's']], 'number'];
 const zoomed = (z6: number, z10: number, z14: number) =>
   ['interpolate', ['linear'], ['zoom'], 6, z6, 10, z10, 14, z14];
@@ -73,6 +71,7 @@ function setSetOpacity(map: MlMap, set: SpeedSet, visible: boolean) {
 function addHighwayLayers(map: MlMap, file: HighwaysFile, still: boolean) {
   const fade = fadeFor(still);
   const empty = { type: 'FeatureCollection' as const, features: [] };
+  addFlowImages(map);
   map.addSource(HW_SOURCE, { type: 'geojson', data: highwaysGeoJson(file, null) });
   const add = (source: string, layer: Record<string, unknown>) =>
     map.addLayer({ source, type: 'line', ...layer } as Parameters<MlMap['addLayer']>[0], 'incidents-halo');
@@ -106,9 +105,9 @@ function addHighwayLayers(map: MlMap, file: HighwaysFile, still: boolean) {
         id: flowLayerId(set, i), filter: ['==', ['get', 'lv'], i],
         layout: { 'line-join': 'round', 'line-cap': 'butt' },
         paint: {
-          // 속도선보다 가늘게 해서 색 테두리 안에 밝은 빛줄기가 흐르게 한다.
-          'line-color': flowColor, 'line-width': zoomed(0.9, 2, 4),
-          'line-offset': DIRECTION_OFFSET, 'line-dasharray': dashAt(0),
+          // 속도선보다 가늘게 해서 색 테두리 안에 밝은 빛줄기가 흐르게 한다. 점선은 단계별 패턴 이미지(lib/flow).
+          'line-pattern': flowImageId(i), 'line-width': zoomed(0.9, 2, 4),
+          'line-offset': DIRECTION_OFFSET,
           'line-opacity': 0, 'line-opacity-transition': fade,
         },
       }),

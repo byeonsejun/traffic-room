@@ -55,6 +55,13 @@ const h = vi.hoisted(() => {
       return { x: 400 + (ll[0] - 127) * 100, y: 300 - (ll[1] - 37) * 100 };
     }
     addControl() {}
+    images = new Set<string>();
+    addImage = vi.fn((id: string) => { this.images.add(id); });
+    hasImage(id: string) {
+      return this.images.has(id);
+    }
+    updateImage = vi.fn();
+    triggerRepaint = vi.fn();
     addSource(id: string, spec?: { data?: unknown }) {
       this.sources.set(id, { setData: vi.fn(), data: spec?.data });
     }
@@ -768,4 +775,15 @@ test('Enter selects the point the tooltip is showing, even after sliding between
   overPoints(map, ['b', 127.05, 37]);
   act(() => { map.getCanvas().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); });
   expect(useConsole.getState().selectedKey).toBe('b');
+});
+
+test('flow lines draw a pattern image per level, not a dasharray (changing a dasharray re-tiles the whole source)', async () => {
+  const { map } = await mountLoaded();
+  for (const set of ['a', 'b']) for (const i of [0, 1, 2, 3, 4]) {
+    const paint = map.getLayer(`hw-${set}-flow-${i}`)!.paint;
+    expect(paint['line-pattern']).toBe(`flow-${i}`);
+    expect(paint).not.toHaveProperty('line-dasharray');
+  }
+  expect([...map.images]).toEqual(['flow-0', 'flow-1', 'flow-2', 'flow-3', 'flow-4']);
+  expect(map.setPaintProperty.mock.calls.some(([, prop]) => prop === 'line-dasharray')).toBe(false);
 });

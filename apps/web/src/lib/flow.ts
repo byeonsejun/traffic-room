@@ -28,45 +28,81 @@ export const SPEED_SETS: SpeedSet[] = ['a', 'b'];
 
 export const flowLayerId = (set: SpeedSet, level: number) => `hw-${set}-flow-${level}`;
 
-// 점선 한 주기(선 두께의 배수): 짧은 획 하나와 긴 틈. DASH_STEPS 번에 걸쳐 한 주기를 밀어낸다.
-const DASH = 2;
-const GAP = 4;
-const PERIOD = DASH + GAP;
-const DASH_STEPS = 16;
-
 /**
- * 획이 선의 진행 방향으로 offset 만큼 밀린 dasharray. MapLibre 의 "animated line" 처럼
- * 길이 0 인 획을 앞에 두어 패턴의 시작을 옮긴다.
+ * 흐르는 점선은 선을 따라 반복되는 패턴 이미지다. 이미지 높이가 선 두께에 맞춰 늘어나므로
+ * 높이 8px 기준으로 획 2배(16px) · 틈 4배(32px)를 그리면 예전 dasharray [2, 4] 와 같은 비율이 된다.
+ *
+ * 왜 dasharray 가 아니라 이미지인가: line-dasharray 는 MapLibre 에서 cross-faded-data-driven 속성이라
+ * setPaintProperty 로 바꿀 때마다 그 소스의 타일을 처음부터 다시 만든다(Style._updateLayer → reload).
+ * 1초에 30번쯤 바꾸던 탓에 가만히 있어도 타일을 초당 300개 다시 만들었고, 확대 · 축소 때 새 타일이 늦게 떴다.
+ * updateImage 는 GPU 텍스처의 그 칸만 고치므로 타일을 다시 만들지 않는다.
  */
-export function dashAt(step: number): number[] {
-  const o = ((step % DASH_STEPS) * PERIOD) / DASH_STEPS;
-  if (o + DASH <= PERIOD) return [0, o, DASH, PERIOD - o - DASH];
-  // 획이 주기 끝을 넘으면 앞쪽으로 넘어온 조각부터 그린다.
-  return [o + DASH - PERIOD, PERIOD - DASH, PERIOD - o, 0];
+export const FLOW_PATTERN = { width: 48, height: 8, dash: 16, steps: 16 } as const;
+
+// 단계별 획 색: 그 단계 속도선 색을 밝힌 빛줄기(정체 < 40 ≤ 서행 < 70 ≤ 원활).
+const LEVEL_RGB: Array<[number, number, number]> = [
+  [0xff, 0xc4, 0xc5],
+  [0xff, 0xc4, 0xc5],
+  [0xff, 0xe6, 0xae],
+  [0xc4, 0xf8, 0xdb],
+  [0xc4, 0xf8, 0xdb],
+];
+
+export const flowImageId = (level: number) => `flow-${level}`;
+
+type Frame = { width: number; height: number; data: Uint8Array };
+const frames = new Map<string, Frame>();
+
+/** level 단계의 step 번째 프레임. 획이 선 진행 방향으로 step × (폭/steps) 만큼 나아가 있다. */
+export function flowFrame(level: number, step: number): Frame {
+  const k = `${level}:${step}`;
+  const hit = frames.get(k);
+  if (hit) return hit;
+  const { width, height, dash, steps } = FLOW_PATTERN;
+  const [r, g, b] = LEVEL_RGB[level] ?? LEVEL_RGB.at(-1)!;
+  const start = ((step % steps) * width) / steps;
+  const data = new Uint8Array(width * height * 4);
+  for (let x = 0; x < width; x += 1) {
+    if ((x - start + width) % width >= dash) continue;
+    for (let y = 0; y < height; y += 1) data.set([r, g, b, 255], (y * width + x) * 4);
+  }
+  const f = { width, height, data };
+  frames.set(k, f);
+  return f;
+}
+
+/** 단계마다 패턴 이미지를 한 번 등록한다(지도 load 뒤, 흐름 레이어보다 먼저). */
+export function addFlowImages(map: Pick<MlMap, 'addImage' | 'hasImage'>) {
+  FLOW_LEVELS.forEach((_, i) => {
+    if (!map.hasImage(flowImageId(i))) map.addImage(flowImageId(i), flowFrame(i, 0));
+  });
 }
 
 export const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
- * 단계별 흐름 레이어의 점선을 단계마다 다른 간격으로 한 칸씩 민다. 루프는 하나만 돈다.
- * 두 벌을 같은 박자로 밀어 바뀌는 동안 점선이 어긋나 보이지 않게 한다.
+ * 단계별 흐름 패턴을 단계마다 다른 간격으로 한 칸씩 민다. 루프는 하나만 돈다.
+ * 두 벌(A · B)이 같은 이미지를 쓰므로 바뀌는 동안에도 점선이 어긋나지 않는다.
  * reduced motion 이면 시작하지 않는다. 돌려준 함수로 멈춘다.
  */
-export function startFlow(map: Pick<MlMap, 'setPaintProperty'>, levels: FlowLevel[] = FLOW_LEVELS): () => void {
+export function startFlow(map: Pick<MlMap, 'updateImage' | 'triggerRepaint'>, levels: FlowLevel[] = FLOW_LEVELS): () => void {
   if (prefersReducedMotion()) return () => {};
   const shown = levels.map(() => 0);
   let stopped = false;
   let raf = 0;
   const tick = (now: number) => {
     if (stopped) return;
+    let changed = false;
     levels.forEach((l, i) => {
       if (l.dashStepMs <= 0) return;
-      const step = Math.floor(now / l.dashStepMs) % DASH_STEPS;
+      const step = Math.floor(now / l.dashStepMs) % FLOW_PATTERN.steps;
       if (step === shown[i]) return;
       shown[i] = step;
-      for (const set of SPEED_SETS) map.setPaintProperty(flowLayerId(set, i), 'line-dasharray', dashAt(step));
+      map.updateImage(flowImageId(i), flowFrame(i, step));
+      changed = true;
     });
+    if (changed) map.triggerRepaint();
     raf = requestAnimationFrame(tick);
   };
   raf = requestAnimationFrame(tick);
