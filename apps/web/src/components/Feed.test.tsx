@@ -50,3 +50,44 @@ test('a fresh construction card comes in quietly', () => {
   render(<Feed />);
   expect(document.querySelector('.ev')!.classList.contains('is-new')).toBe(false);
 });
+
+// 실시간 이벤트가 하나 오면 첫 화면의 최근 상황 8건이 통째로 사라져 피드가 한 줄만 남던 문제.
+const recentSet = () => {
+  const out: Record<string, Incident> = {};
+  for (let n = 0; n < 10; n++) {
+    out[`r${n}`] = inc(`r${n}`, { roadName: `도로${n}`, startedAt: `2026-11-12T0${n}:00:00.000Z` });
+  }
+  return out;
+};
+
+test('without live items, shows the most recent ongoing incidents under one heading', () => {
+  useConsole.setState({ incidents: recentSet() });
+  render(<Feed />);
+  expect(screen.getByRole('heading', { name: '최근 시작된 상황' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: '그 전에 시작된 상황' })).toBeNull();
+  expect(document.querySelectorAll('.ev')).toHaveLength(8);
+});
+
+test('a live arrival goes on top and the earlier incidents stay below it', () => {
+  const incidents = recentSet();
+  const a = inc('a', { roadName: '순천완주선', startedAt: '2026-11-12T12:00:00.000Z' });
+  useConsole.setState({ incidents: { ...incidents, a }, feed: [item(1, 'arrived', a, true)] });
+  render(<Feed />);
+  expect(screen.getByRole('heading', { name: '방금 들어온 상황' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: '그 전에 시작된 상황' })).toBeTruthy();
+  const cards = [...document.querySelectorAll('.ev')];
+  expect(cards).toHaveLength(8);
+  expect(cards[0]!.textContent).toContain('순천완주선');
+  // 위에 이미 있는 상황은 아래 목록에 다시 나오지 않는다.
+  expect(cards.filter((c) => c.textContent!.includes('순천완주선'))).toHaveLength(1);
+  expect(cards[1]!.textContent).toContain('도로9');
+});
+
+test('once live items fill the list, the earlier section goes away', () => {
+  const incidents = recentSet();
+  const feed = Object.values(incidents).slice(0, 8).map((i, n) => item(n + 1, 'arrived', i));
+  useConsole.setState({ incidents, feed });
+  render(<Feed />);
+  expect(screen.queryByRole('heading', { name: '그 전에 시작된 상황' })).toBeNull();
+  expect(document.querySelectorAll('.ev')).toHaveLength(8);
+});
