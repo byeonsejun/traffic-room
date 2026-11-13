@@ -53,7 +53,7 @@ export async function saveTrafficSnapshot(db: Db, s: NewTrafficSnapshot): Promis
     [
       iso(s.dataAt), iso(s.collectedAt), iso(s.showAt), s.speeds.length,
       m.avgSpeed, m.ok, m.slow, m.jam, m.jamKm,
-      s.speeds.map((x) => x.linkId), s.speeds.map((x) => x.speed),
+      s.speeds.map((x) => x.linkId), s.speeds.map((x) => Math.round(x.speed)),
       s.routes.map((x) => x.route), s.routes.map((x) => x.avgSpeed),
     ],
   );

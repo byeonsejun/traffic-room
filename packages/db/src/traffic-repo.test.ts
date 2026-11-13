@@ -33,6 +33,12 @@ describe('save / latest', () => {
     expect(i.routes).toEqual([{ dataAt: at(-60).toISOString(), route: '경부선', avgSpeed: 70.5 }]);
   });
 
+  test('decimal speeds from ITS are stored as rounded integers', async () => {
+    const speeds = [{ linkId: 'D1', speed: 55.5 }, { linkId: 'D2', speed: 66.7 }, { linkId: 'D3', speed: 0.4 }];
+    const id = await saveTrafficSnapshot(db, snap(at(-60), { speeds }));
+    expect(await getLinkSpeeds(db, id)).toEqual([['D1', 56], ['D2', 67], ['D3', 0]]);
+  });
+
   test('latest is null when empty', async () => {
     expect(await latestTrafficSnapshot(db)).toBeNull();
   });

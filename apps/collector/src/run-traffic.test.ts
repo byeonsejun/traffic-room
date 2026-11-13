@@ -31,6 +31,16 @@ describe('runTraffic', () => {
     expect(new Date(row.show_at).toISOString()).toBe('2026-11-13T02:00:00.000Z');
   });
 
+  test('ITS 가 소수 속도를 줘도 ok 로 저장한다', async () => {
+    const db = await createTestDb();
+    const fetched = fetchOf(10);
+    fetched.items = fetched.items.map((it, i) => ({ ...it, speed: 55.5 + i * 1.2 }));
+    const r = await runTraffic({ db, its: itsOf(async () => fetched), now, timing, highways });
+    expect(r).toMatchObject({ status: 'ok', links: 10 });
+    expect(await count(db, 'traffic_snapshots')).toBe(1);
+    expect(await count(db, 'link_speeds')).toBe(10);
+  });
+
   test('같은 응답을 다시 받으면 same 이고 아무것도 더 쓰지 않는다', async () => {
     const db = await createTestDb();
     const its = itsOf(async () => fetchOf(10));
