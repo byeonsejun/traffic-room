@@ -15,9 +15,11 @@
 | `DATABASE_URL` | Render, Vercel, Mac의 `<저장소>/.env` | `postgres://사용자:비밀번호@호스트/db?sslmode=require` | 예 |
 | `ITS_API_KEY` | Mac의 `~/.its-api.env` (Render에는 넣지 않는다) | ITS에서 받은 인증키 문자열 | 예 |
 | `ITS_MODE` | Render(`render.yaml`에 `live`로 고정), 수집 스크립트(`live`로 고정) | `live` 또는 `fixture` | 아니오 |
-| `COLLECT_INTERVAL_MINUTES` | Mac의 `<저장소>/.env` (없으면 60) | 교통 수집 간격(분), 양의 정수 | 아니오 |
+| `COLLECT_INTERVAL_MINUTES` | Mac의 `.env`, Vercel, Render (없으면 60) | 교통 수집 간격(분), 양의 정수. Render는 지표 갱신 주기, Vercel은 "수집 중단" 판정, `/insights` 격자, "N분마다 수집" 표시에 쓴다. 수집 쪽과 같은 값이어야 한다 | 아니오 |
 | `DELAY_MINUTES` | Mac의 `.env`, Vercel, Render (없으면 60) | 화면에 보이는 교통 상태를 실제보다 늦추는 분. 수집 쪽과 화면 쪽이 같은 값이어야 한다 | 아니오 |
 | `ITS_MONTHLY_LIMIT` | Mac의 `.env` (없으면 950) | 서비스별 월 호출 상한. 이 건수에 닿으면 수집을 멈춘다 | 아니오 |
+
+ITS 한도 상향 승인을 받은 뒤에는 `COLLECT_INTERVAL_MINUTES`, `DELAY_MINUTES`, `ITS_MONTHLY_LIMIT`를 Mac `.env`, Vercel, Render에 함께 설정한다(Vercel과 Render는 앞의 두 값만 읽는다).
 | `CCTV_REFRESH` | Render(`render.yaml`에 `off`로 고정) | `on` 또는 `off`. 비워 두면 `ITS_MODE=live`일 때만 켜진다 | 아니오 |
 | `ALLOWED_ORIGINS` | Render | `https://<web>`를 쉼표로 구분해 나열. 미리보기 주소가 필요하면 함께 적는다 | 아니오 |
 | `NEXT_PUBLIC_REALTIME_URL` | Vercel | `wss://<realtime>/ws` | 아니오 |
@@ -148,7 +150,7 @@ plist를 고쳤을 때도 `bootout` 뒤에 다시 `bootstrap`한다.
 
 ## 처음 배포할 때
 
-1. Neon 연결 문자열을 로컬 `.env`에 넣고 `pnpm db:migrate`를 돌려 테이블 4개를 만든다.
+1. Neon 연결 문자열을 로컬 `.env`에 넣고 `pnpm db:migrate`를 돌려 테이블 8개를 만든다.
 2. 위 "수집은 국내 회선의 Mac에서"대로 설치하고 `scripts/collect-local.sh --cctvs`를 한 번 직접 돌려 이벤트와 CCTV 목록을 채운다.
 3. Render에서 Blueprint로 저장소를 연결하고 `DATABASE_URL`, `ALLOWED_ORIGINS`를 입력한다. `https://<realtime>/health`가 `{"ok":true}`를 돌려주는지 확인한다.
 4. Vercel에서 Root Directory를 `apps/web`으로 import하고 `DATABASE_URL`, `NEXT_PUBLIC_REALTIME_URL`을 넣는다. 함수 지역이 `icn1`인지 Settings에서 본다.
@@ -156,6 +158,18 @@ plist를 고쳤을 때도 `bootout` 뒤에 다시 `bootstrap`한다.
 6. `https://<web>/maplibre-gl-worker.mjs`가 200을 돌려주는지 확인한다. 지도 워커 파일이라 404면 지도가 뜨지 않는다.
 7. cron-job.org에서 `https://<realtime>/health`를 10분마다 GET하게 해 서버가 잠들지 않도록 한다.
 8. 웹을 열어 "실시간 연결됨"과 CCTV 재생, 크게 보기를 확인한다.
+
+## 2차(교통 속도) 배포 순서
+
+순서를 바꾸면 안 된다.
+
+1. `pnpm db:migrate`로 새 테이블과 제약을 먼저 만든다.
+2. main에 push한다. Vercel과 Render가 배포한다.
+3. Mac의 수집용 복사본을 갱신한다: `cd "$APP" && git pull --ff-only && pnpm install --frozen-lockfile --filter "@traffic-room/collector..."`.
+4. `scripts/collect-local.sh --traffic`을 한 번 직접 돌린다.
+5. 로그에서 `traffic ok …` 줄을 확인한다.
+
+마이그레이션 전에 수집기를 먼저 돌리면 check 제약 위반(코드 23514)으로 실패한다.
 
 ## 장애가 났을 때 확인 순서
 
