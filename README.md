@@ -104,7 +104,7 @@ pnpm --filter @traffic-room/web dev
 
 - DB 없이 실행하면 화면은 저장해 둔 실제 ITS 응답(2026-11-11)으로 뜹니다. 이 대체 동작은 운영 환경에서는 꺼져 있습니다.
 - 실시간 서버(`apps/realtime`)와 수집기(`apps/collector`)는 Postgres가 필요합니다. `.env`에 `DATABASE_URL`을 넣고 `pnpm db:migrate`로 테이블을 만듭니다. 운영 구성은 [`docs/deploy.md`](docs/deploy.md)에 있습니다.
-- 검사는 `pnpm test`(Vitest 173개), `pnpm typecheck`, `pnpm lint`입니다.
+- 검사는 `pnpm test`(Vitest 176개), `pnpm typecheck`, `pnpm lint`입니다.
 
 **구성** pnpm 모노레포. `packages/shared`(메시지 형식과 zod 검증) · `packages/its`(ITS 클라이언트와 응답 정리) · `packages/db`(Neon 저장소) · `apps/collector`(수집과 비교) · `apps/realtime`(Fastify + WebSocket, 지연 재생 스케줄러) · `apps/web`(화면)
 
