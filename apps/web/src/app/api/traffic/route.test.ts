@@ -1,6 +1,9 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Db } from '@traffic-room/db';
+import { fileURLToPath } from 'node:url';
+import { loadHighways } from '@traffic-room/highways/read';
+import { createItsClient } from '@traffic-room/its';
 import { saveTrafficSnapshot } from '@traffic-room/db';
 import { createTestDb } from '@traffic-room/db/test-db';
 
@@ -84,9 +87,12 @@ describe('fixture replay without DATABASE_URL', () => {
     const body = await res.json();
     expect(body.id).toBe(0);
     expect(body.nextShowAt).toBeNull();
-    expect(body.dataAt).toBe('2026-11-13T02:00:00.000Z');
-    expect(body.speeds.length).toBeGreaterThan(100);
-    expect(body.speeds.length).toBeLessThanOrEqual(1353);
+    const fixture = await createItsClient({ mode: 'fixture' }).traffic();
+    const highways = loadHighways(fileURLToPath(new URL('../../../../public/highways.json', import.meta.url)));
+    const expected = fixture.items.filter((i) => highways.get(i.linkId));
+    expect(body.dataAt).toBe(fixture.dataAt[0]);
+    expect(expected.length).toBeGreaterThan(100);
+    expect(body.speeds).toEqual(expected.map((i) => [i.linkId, i.speed]));
     expect(body.speeds[0]).toEqual([expect.any(String), expect.any(Number)]);
   });
 

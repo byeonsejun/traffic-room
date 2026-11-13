@@ -4,7 +4,7 @@ import { logFailure } from '@/lib/log';
 import {
   createNeonDb, getLinkSpeeds, shownTrafficSnapshot, upcomingTrafficSnapshots,
 } from '@traffic-room/db';
-import { loadHighways } from '@traffic-room/highways';
+import { loadHighways } from '@traffic-room/highways/read';
 import { createItsClient } from '@traffic-room/its';
 
 export const dynamic = 'force-dynamic';
