@@ -13,6 +13,9 @@ ITS_ENV="$HOME/.its-api.env"
 # 점검용으로 다른 환경 파일을 가리킬 수 있다(운영에서는 지정하지 않는다).
 DB_ENV="${TRAFFIC_ROOM_DB_ENV:-$REPO/.env}"
 LOG="$HOME/Library/Logs/traffic-room-collector.log"
+# 실패한 작업의 출력 전체(뒤쪽 40줄)를 남기는 곳. 한 줄 로그만으로는 원인이 안 보일 때 본다.
+FAIL_LOG="$HOME/Library/Logs/traffic-room-collector-fail.log"
+FAIL_LOG_MAX_LINES=2000
 NODE_BIN="$HOME/.nvm/versions/node/v24.15.0/bin"
 STATE_DIR="${TRAFFIC_ROOM_STATE_DIR:-$HOME/Library/Application Support/traffic-room}"
 LOCK_DIR="$STATE_DIR/collect.lock"
@@ -33,12 +36,19 @@ for arg in "$@"; do
   esac
 done
 
-# 로그에는 상태 한 줄만 남기고, 혹시 섞인 접속 문자열은 가린다.
+# 혹시 섞인 접속 문자열 · 키를 가린다(여러 줄도 된다).
+mask() {
+  local text
+  text="$(printf '%s' "$1" | sed -E -e 's#postgres(ql)?://[^[:space:]]+#postgres://***#g' -e 's#(apiKey=)[^&[:space:]]+#\1***#g')"
+  if [ -n "${ITS_API_KEY:-}" ]; then text="${text//"$ITS_API_KEY"/***}"; fi
+  if [ -n "${DATABASE_URL:-}" ]; then text="${text//"$DATABASE_URL"/***}"; fi
+  printf '%s' "$text"
+}
+
+# 로그에는 상태 한 줄만 남긴다.
 log() {
   local line
-  line="$(printf '%s %s' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | sed -E -e 's#postgres(ql)?://[^[:space:]]+#postgres://***#g' -e 's#(apiKey=)[^&[:space:]]+#\1***#g')"
-  if [ -n "${ITS_API_KEY:-}" ]; then line="${line//"$ITS_API_KEY"/***}"; fi
-  if [ -n "${DATABASE_URL:-}" ]; then line="${line//"$DATABASE_URL"/***}"; fi
+  line="$(mask "$(printf '%s %s' "$(date '+%Y-%m-%d %H:%M:%S')" "$*")")"
   if [ "$DRY_RUN" -eq 1 ]; then echo "[dry-run] log: $line"; return; fi
   mkdir -p "$(dirname "$LOG")"
   echo "$line" >> "$LOG"
@@ -56,6 +66,32 @@ read_var() {
 }
 
 fail() { log "FAIL $*"; echo "$*" >&2; exit 1; }
+
+# 실패한 작업의 한 줄 요약. 수집기는 실패할 때 "<작업> failed code=…" 같은 줄을 찍는데,
+# 그 뒤에 pnpm 이 "ELIFECYCLE Command failed …" 를 붙여서 마지막 줄만 보면 원인이 빠진다.
+# 그래서 작업 이름으로 시작하는 마지막 줄을 고르고, 없으면 pnpm 줄을 뺀 마지막 줄을 쓴다.
+fail_summary() {
+  local job="$1" out="$2" line
+  line="$(printf '%s\n' "$out" | grep -E "^${job} " | tail -n 1 || true)"
+  if [ -z "$line" ]; then
+    line="$(printf '%s\n' "$out" | grep -vE '^[[:space:]]*$|ELIFECYCLE|ERR_PNPM|^> ' | tail -n 1 || true)"
+  fi
+  printf '%s' "${line:-출력 없음}"
+}
+
+# 실패한 작업의 출력 뒤쪽 40줄을 따로 남긴다(가려서). 파일은 FAIL_LOG_MAX_LINES 줄을 넘지 않게 자른다.
+keep_fail_output() {
+  local job="$1" out="$2"
+  mkdir -p "$(dirname "$FAIL_LOG")"
+  {
+    printf '=== %s FAIL %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$job"
+    mask "$(printf '%s\n' "$out" | tail -n 40)"
+    printf '\n'
+  } >> "$FAIL_LOG"
+  if [ "$(wc -l < "$FAIL_LOG")" -gt "$FAIL_LOG_MAX_LINES" ]; then
+    tail -n "$FAIL_LOG_MAX_LINES" "$FAIL_LOG" > "$FAIL_LOG.tmp" && mv "$FAIL_LOG.tmp" "$FAIL_LOG"
+  fi
+}
 
 # launchd 의 PATH 는 최소라서 nvm 의 node 를 앞에 붙인다. 없으면 현재 PATH 를 그대로 쓴다.
 if [ -d "$NODE_BIN" ]; then PATH="$NODE_BIN:$PATH"; fi
@@ -158,13 +194,14 @@ cd "$REPO"
 
 STATUS=0
 for job in "${RUN_JOBS[@]}"; do
-  # 수집기가 찍는 한 줄 요약만 받는다. 실패하면 마지막 줄만 로그에 남긴다.
+  # 성공하면 수집기가 찍는 한 줄 요약(마지막 줄)을, 실패하면 원인 줄을 로그에 남기고 출력 전체는 FAIL_LOG 에 둔다.
   if out="$("$PNPM" --filter @traffic-room/collector "$job" 2>&1)"; then
     write_stamp "$job"
     log "OK $job: $(printf '%s' "$out" | tail -n 1)"
   else
     STATUS=1
-    log "FAIL $job: $(printf '%s' "$out" | tail -n 1)"
+    log "FAIL $job: $(fail_summary "$job" "$out")"
+    keep_fail_output "$job" "$out"
   fi
 done
 exit "$STATUS"
