@@ -8,7 +8,9 @@ import { FLOW_LEVELS, SPEED_SETS, dashAt, flowLayerId, prefersReducedMotion, sta
 import { toGeoJson as highwaysGeoJson, speedGeoJson, type HighwaysFile } from '@/lib/highways';
 import { logFailure } from '@/lib/log';
 import { hhmm } from '@/lib/time';
-import { categoryColor, tokens } from '@/lib/tokens';
+import { incidentTitle } from '@/lib/incident';
+import { TIP_EDGE, tipSpot } from '@/lib/tip';
+import { CATEGORY_LABEL, categoryColor, tokens } from '@/lib/tokens';
 import { isLoudArrival, useConsole } from '@/store/console';
 import { useActiveCctv } from './useActiveCctv';
 
@@ -27,8 +29,6 @@ const PULSE_MS = 1400 * 3;
 const PIN_GLIDE_MS = 700;
 // 핀 툴팁: 핀 테두리에서 이만큼 바깥까지는 핀 위로 본다(10px 점을 손으로 맞추기 어렵지 않게).
 const PIN_HIT_PAD = 6;
-// 툴팁이 지도 가장자리에서 띄울 최소 간격.
-const TIP_EDGE = 8;
 const NO_CCTVS: Cctv[] = [];
 const WORKER_PATH = '/maplibre-gl-worker.mjs'; // scripts/copy-maplibre-worker.mjs 가 dev · build 전에 복사한다.
 
@@ -189,6 +189,107 @@ function placeTip(pin: LivePin, box: DOMRect) {
   tip.style.setProperty('--tip-dx', `${Math.round(dx)}px`);
 }
 
+/**
+ * 마우스로 가리키는 중인지. 터치는 탭 뒤에 마우스 이벤트를 흉내 내는데 mouseout 이 오지 않아 툴팁이 남는다.
+ * 포인터 이벤트가 흉내 낸 마우스 이벤트보다 먼저 오므로 여기서 입력 종류를 기억해 두고, 터치가 오면 바로 끈다.
+ */
+type Pointer = ReturnType<typeof trackPointer>;
+function trackPointer(box: HTMLElement) {
+  let mouse = true;
+  const subs = new Set<() => void>();
+  const onPointer = (e: PointerEvent) => {
+    mouse = e.pointerType === 'mouse' || e.pointerType === 'pen';
+    if (!mouse) subs.forEach((fn) => fn());
+  };
+  box.addEventListener('pointerdown', onPointer);
+  box.addEventListener('pointermove', onPointer);
+  return {
+    isMouse: () => mouse,
+    /** 터치가 오면 부를 함수(툴팁 닫기). */
+    onNotMouse: (fn: () => void) => subs.add(fn),
+    stop: () => {
+      subs.clear();
+      box.removeEventListener('pointerdown', onPointer);
+      box.removeEventListener('pointermove', onPointer);
+    },
+  };
+}
+
+type PointHit = { properties?: { key?: unknown } | null };
+
+/** 마우스 아래 돌발 점의 key 들(맨 위부터, 중복 없이). 툴팁과 키보드 Enter 가 같은 규칙을 쓴다. */
+function pointKeys(hits: PointHit[] | undefined): string[] {
+  const keys = new Set<string>();
+  for (const f of hits ?? []) if (typeof f.properties?.key === 'string') keys.add(f.properties.key);
+  return [...keys];
+}
+
+/**
+ * 돌발 점 툴팁. 점은 캔버스에 그려지므로 레이어 mousemove 로 어느 점 위인지 받고, 지도 위 툴팁 하나를 그 점에 붙인다.
+ * 겹친 점은 맨 위 하나와 "외 N건". 지도가 움직이기 시작하면(끌기 · 확대 · 자동 이동) 닫고, 다음 mousemove 에서 다시 연다.
+ * 툴팁은 aria-hidden — 같은 내용을 피드가 읽어 준다.
+ */
+function watchIncidentHover(
+  map: MlMap,
+  tip: HTMLElement,
+  lookup: (key: string) => Incident | undefined,
+  pointer: Pointer,
+) {
+  const cat = tip.querySelector<HTMLElement>('.map-tip__cat')!;
+  const name = tip.querySelector<HTMLElement>('.map-tip__name')!;
+  let key: string | null = null;
+  let more = 0;
+  let on = false;
+  const hide = () => {
+    key = null;
+    on = false;
+    tip.classList.remove('is-on', 'is-below');
+  };
+  pointer.onNotMouse(hide);
+  // 자리는 렌더된 점 좌표(타일 양자화로 조금 어긋날 수 있다)가 아니라 돌발 자체 좌표로 잡는다. 돌발이 옮겨 가도 따라간다.
+  const render = () => {
+    const i = key ? lookup(key) : undefined;
+    if (!i) return hide();
+    cat.textContent = more > 0 ? `${CATEGORY_LABEL[i.category]} · 외 ${more}건` : CATEGORY_LABEL[i.category];
+    name.textContent = incidentTitle(i);
+    tip.style.setProperty('--cat', categoryColor(i.category));
+    tip.classList.add('is-on');
+    const box = map.getContainer().getBoundingClientRect();
+    const size = tip.getBoundingClientRect();
+    const spot = tipSpot(map.project([i.lon, i.lat]), size, box);
+    tip.style.left = `${spot.left}px`;
+    tip.style.top = `${spot.top}px`;
+    tip.classList.toggle('is-below', spot.below);
+    on = true;
+  };
+  const onMove = (e: { features?: PointHit[] }) => {
+    if (!pointer.isMouse()) return;
+    const keys = pointKeys(e.features);
+    if (keys.length === 0) return hide();
+    // 같은 점 안에서 마우스가 움직이는 동안은 다시 쓰고 재지 않는다(지도가 움직이면 movestart 에서 닫힌다).
+    if (on && key === keys[0] && more === keys.length - 1) return;
+    key = keys[0]!;
+    more = keys.length - 1;
+    render();
+  };
+  map.on('mousemove', 'incidents-core', onMove);
+  map.on('mouseleave', 'incidents-core', hide);
+  map.on('movestart', hide);
+  return {
+    /** 돌발 목록이 바뀌면: 가리키던 상황이 사라졌으면 닫고, 남아 있으면 글을 새로 쓴다. */
+    refresh: () => {
+      if (key) render();
+    },
+    stop: () => {
+      // 툴팁 요소는 지도보다 오래 산다. 지도를 다시 만들 때 옛 글이 남지 않게 닫는다.
+      hide();
+      map.off('mousemove', 'incidents-core', onMove);
+      map.off('mouseleave', 'incidents-core', hide);
+      map.off('movestart', hide);
+    },
+  };
+}
+
 type PinHover = {
   /** 핀이 움직이거나 숨거나 다시 보일 때 마지막 마우스 좌표로 다시 판정한다. remeasure 면 켜져 있어도 자리를 다시 잡는다. */
   recheck: (remeasure?: boolean) => void;
@@ -199,19 +300,19 @@ type PinHover = {
  * 핀은 포인터를 지나보내므로(끌기 · 돌발 점 누르기를 막지 않게) 핀 위인지는 지도 mousemove 좌표로 직접 판정한다.
  * 마우스가 멈춰 있어도 지도가 움직이면('move') 마지막 좌표로 다시 보고, 핀이 미끄러지거나 숨는 건 recheck 로 알려 받는다.
  * 판정은 핀 요소 하나의 getBoundingClientRect 라 이벤트마다 해도 가볍고, 실제 크기라 알약 글자가 바뀌어도 맞다.
- * 터치는 탭 뒤에 마우스 이벤트를 흉내 내는데 mouseout 이 오지 않아 툴팁이 남으므로, 마우스 포인터일 때만 켠다.
+ * 터치에서는 켜지 않는다(trackPointer).
  */
-function watchPinHover(map: MlMap, getPin: () => LivePin | null): PinHover {
+function watchPinHover(map: MlMap, getPin: () => LivePin | null, pointer: Pointer): PinHover {
   let last: { x: number; y: number } | null = null;
   let on = false;
-  let mouse = true;
   const hide = () => {
     on = false;
     getPin()?.el.classList.remove('is-hover', 'is-below');
   };
+  pointer.onNotMouse(hide);
   const check = (remeasure = false) => {
     const pin = getPin();
-    if (!last || !mouse || !pin || pin.el.hidden) return hide();
+    if (!last || !pointer.isMouse() || !pin || pin.el.hidden) return hide();
     if (!inside(pin.el.getBoundingClientRect(), last.x, last.y, PIN_HIT_PAD)) return hide();
     // 켜져 있으면 다시 재지 않는다. 툴팁은 핀 안에 있어 같이 움직인다.
     if (on && !remeasure) return;
@@ -227,22 +328,12 @@ function watchPinHover(map: MlMap, getPin: () => LivePin | null): PinHover {
     last = null;
     hide();
   };
-  // 포인터 이벤트가 흉내 낸 마우스 이벤트보다 먼저 오므로 여기서 입력 종류를 기억해 둔다.
-  const onPointer = (e: PointerEvent) => {
-    mouse = e.pointerType === 'mouse' || e.pointerType === 'pen';
-    if (!mouse) hide();
-  };
-  const box = map.getContainer();
-  box.addEventListener('pointerdown', onPointer);
-  box.addEventListener('pointermove', onPointer);
   map.on('mousemove', onMove);
   map.on('move', onMapMove);
   map.on('mouseout', onOut);
   return {
     recheck: (remeasure) => check(remeasure),
     stop: () => {
-      box.removeEventListener('pointerdown', onPointer);
-      box.removeEventListener('pointermove', onPointer);
       map.off('mousemove', onMove);
       map.off('move', onMapMove);
       map.off('mouseout', onOut);
@@ -298,6 +389,8 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
   const pulsed = useRef(new Set<number>());
   const livePin = useRef<LivePin | null>(null);
   const pinHover = useRef<PinHover | null>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+  const pointHover = useRef<ReturnType<typeof watchIncidentHover> | null>(null);
   // 지도 load 때 넣을 최신 목록. 렌더 중이 아니라 커밋 뒤에 갱신한다.
   const latest = useRef(incidents);
   useEffect(() => {
@@ -372,6 +465,10 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
           map!.getCanvas().style.cursor = 'pointer';
           const key = e.features?.[0]?.properties?.key;
           hovered = typeof key === 'string' ? key : null;
+        });
+        // 이웃한 점으로 미끄러져도 Enter 가 툴팁이 보여 주는 점을 고르게 mousemove 로도 맞춘다.
+        map.on('mousemove', 'incidents-core', (e) => {
+          hovered = pointKeys(e.features)[0] ?? null;
         });
         map.on('mouseleave', 'incidents-core', () => {
           map!.getCanvas().style.cursor = '';
@@ -484,6 +581,7 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
   useEffect(() => {
     if (!ready) return;
     (mapRef.current?.getSource(SOURCE) as GeoJSONSource | undefined)?.setData(toGeoJson(incidents));
+    pointHover.current?.refresh();
   }, [incidents, ready]);
 
   // 피드 · 지도 · 키보드 어디서 고르든 고른 돌발로 지도를 옮긴다.
@@ -525,15 +623,22 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
     }
   }, [ready, camLon, camLat]);
 
-  // 핀 위에 마우스를 올리면 CCTV 이름 툴팁.
+  // 마우스 툴팁: 핀 위면 CCTV 이름, 돌발 점 위면 그 상황 이름. 입력 종류(마우스/터치)는 한 곳에서 본다.
   useEffect(() => {
     const map = mapRef.current;
-    if (!ready || !map) return;
-    const hover = watchPinHover(map, () => livePin.current);
-    pinHover.current = hover;
+    const tip = tipRef.current;
+    if (!ready || !map || !tip) return;
+    const pointer = trackPointer(map.getContainer());
+    const pin = watchPinHover(map, () => livePin.current, pointer);
+    const points = watchIncidentHover(map, tip, (key) => latest.current[key], pointer);
+    pinHover.current = pin;
+    pointHover.current = points;
     return () => {
-      hover.stop();
+      pin.stop();
+      points.stop();
+      pointer.stop();
       pinHover.current = null;
+      pointHover.current = null;
     };
   }, [ready]);
 
@@ -590,6 +695,10 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
   return (
     <>
       <div ref={box} className="map-view" role="application" aria-label="전국 고속도로 소통과 돌발 상황 지도" />
+      <div ref={tipRef} className="map-tip" aria-hidden="true">
+        <span className="map-tip__cat" />
+        <span className="map-tip__name" />
+      </div>
       <Legend dataAt={trafficDataAt} error={trafficError} roadsError={roadsError} />
     </>
   );

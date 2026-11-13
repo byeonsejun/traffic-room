@@ -225,6 +225,31 @@ button.ev[aria-pressed='true'] { background: #1a2a3e; }
 
 .map-view { width: 100%; height: 100%; background: var(--asphalt); }
 .map-view .maplibregl-canvas:focus-visible { outline: 2px solid var(--info); outline-offset: -2px; }
+/* 돌발 점에 마우스를 올리면 뜨는 상황 이름. 자리는 MapView 의 watchIncidentHover 가 left · top 으로 잡는다. */
+.map-tip {
+  position: absolute; left: 0; top: 0; z-index: 5;
+  width: max-content; max-width: 280px; padding: 6px 10px 7px; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.55);
+  font-size: 13px; font-weight: 500; line-height: 18px;
+  pointer-events: none; visibility: hidden; opacity: 0;
+  transition: opacity 0.12s, visibility 0s linear 0.12s;
+}
+.map-tip.is-on { visibility: visible; opacity: 1; transition: opacity 0.12s; }
+.map-tip__cat {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 400; line-height: 15px; color: var(--mute);
+}
+.map-tip__cat::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--cat, var(--mute)); flex: none;
+}
+/* 상황 문구는 길 수 있어 자르지 않고 줄을 바꾼다(최대 폭 280px). */
+.map-tip__name { display: block; overflow-wrap: anywhere; }
+/* 실시간 핀 툴팁이 떠 있으면 그쪽이 우선이다(핀 밑 돌발 점 툴팁과 겹치지 않게). */
+.map:has(.live-pin.is-hover) .map-tip { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  .map-tip, .map-tip.is-on { transition: none; }
+}
 
 /* 도로 색 범례: 지도 왼쪽 아래 */
 .map-legend {

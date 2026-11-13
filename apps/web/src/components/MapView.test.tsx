@@ -28,12 +28,31 @@ const h = vi.hoisted(() => {
       this.options = options;
       state.maps.push(this);
     }
-    off(event: string) {
-      this.handlers.delete(event);
+    // 같은 이벤트에 여러 리스너가 붙으면 차례로 모두 부르고, off 는 그 리스너 하나만 뗀다(실제 maplibre 처럼).
+    // handlers 에는 키마다 모두를 부르는 함수 하나를 둬서 테스트가 handlers.get(key)!(…) 로 이벤트를 낸다.
+    lists = new Map<string, Handler[]>();
+    canvas = document.createElement('canvas');
+    private sync(key: string) {
+      const list = this.lists.get(key) ?? [];
+      if (list.length === 0) this.handlers.delete(key);
+      else this.handlers.set(key, (...args) => [...list].forEach((fn) => fn(...args)));
+    }
+    off(event: string, a?: unknown, b?: unknown) {
+      const key = typeof a === 'string' ? `${event}:${a}` : event;
+      const fn = (typeof a === 'string' ? b : a) as Handler | undefined;
+      const list = this.lists.get(key) ?? [];
+      this.lists.set(key, fn ? list.filter((f) => f !== fn) : []);
+      this.sync(key);
     }
     on(event: string, a: unknown, b?: unknown) {
-      if (typeof a === 'function') this.handlers.set(event, a as Handler);
-      else this.handlers.set(`${event}:${String(a)}`, b as Handler);
+      const key = typeof a === 'function' ? event : `${event}:${String(a)}`;
+      const fn = (typeof a === 'function' ? a : b) as Handler;
+      this.lists.set(key, [...(this.lists.get(key) ?? []), fn]);
+      this.sync(key);
+    }
+    /** 화면 좌표: 경도 1도 = 100px, 위도 1도 = -100px, (127, 37) 이 (400, 300). */
+    project(ll: [number, number]) {
+      return { x: 400 + (ll[0] - 127) * 100, y: 300 - (ll[1] - 37) * 100 };
     }
     addControl() {}
     addSource(id: string, spec?: { data?: unknown }) {
@@ -50,7 +69,7 @@ const h = vi.hoisted(() => {
       return this.sources.get(id);
     }
     getCanvas() {
-      return document.createElement('canvas');
+      return this.canvas;
     }
     getContainer() {
       return this.options.container as HTMLElement;
@@ -626,4 +645,127 @@ test('touch taps do not open the tooltip', async () => {
   act(() => { box.dispatchEvent(pm); });
   hover(map, 400, 297);
   expect(el.classList.contains('is-hover')).toBe(true);
+});
+
+// 돌발 점에 마우스를 올리면 그 상황 이름 툴팁. 점은 캔버스에 그려지므로 레이어 mousemove 로 받는다.
+const mapTip = () => document.querySelector<HTMLElement>('.map-tip')!;
+const overPoints = (map: InstanceType<typeof h.FakeMap>, ...keys: Array<[string, number, number]>) =>
+  act(() => map.handlers.get('mousemove:incidents-core')!({
+    features: keys.map(([key, lon, lat]) => ({ properties: { key }, geometry: { type: 'Point', coordinates: [lon, lat] } })),
+  }));
+const leavePoints = (map: InstanceType<typeof h.FakeMap>) => act(() => map.handlers.get('mouseleave:incidents-core')!({}));
+function sizeMap(map: InstanceType<typeof h.FakeMap>) {
+  vi.spyOn(map.getContainer(), 'getBoundingClientRect').mockReturnValue(rect(0, 0, 800, 600));
+  vi.spyOn(mapTip(), 'getBoundingClientRect').mockReturnValue(rect(0, 0, 160, 40));
+}
+const accident = { ...inc('a', 'accident', 127, 37), roadName: '경부선', message: '**추돌사고** 처리 중' };
+
+test('hovering an incident point shows its category and title above the point', async () => {
+  useConsole.setState({ incidents: { a: accident } });
+  const { map } = await mountLoaded();
+  sizeMap(map);
+  const tip = mapTip();
+  expect(tip.classList.contains('is-on')).toBe(false);
+  overPoints(map, ['a', 127, 37]);
+  expect(tip.classList.contains('is-on')).toBe(true);
+  expect(tip.querySelector('.map-tip__cat')!.textContent).toBe('교통사고');
+  expect(tip.querySelector('.map-tip__name')!.textContent).toBe('경부선 추돌사고 처리 중');
+  // 점 (400,300) 위 가운데: left 320, top 300 - 12 - 40.
+  expect(tip.style.left).toBe('320px');
+  expect(tip.style.top).toBe('248px');
+  leavePoints(map);
+  expect(tip.classList.contains('is-on')).toBe(false);
+});
+
+test('the map tooltip is hidden from screen readers (the feed already lists incidents)', async () => {
+  await mountLoaded();
+  expect(mapTip().getAttribute('aria-hidden')).toBe('true');
+  expect(mapTip().hasAttribute('role')).toBe(false);
+});
+
+test('overlapping points show the top one plus how many more', async () => {
+  useConsole.setState({ incidents: { a: accident, b: inc('b', 'construction', 127, 37), c: inc('c', 'weather', 127, 37) } });
+  const { map } = await mountLoaded();
+  sizeMap(map);
+  overPoints(map, ['a', 127, 37], ['b', 127, 37], ['b', 127, 37], ['c', 127, 37]);
+  expect(mapTip().querySelector('.map-tip__cat')!.textContent).toBe('교통사고 · 외 2건');
+});
+
+test('moving to another point updates the tooltip; moving the map hides it', async () => {
+  useConsole.setState({ incidents: { a: accident, b: { ...inc('b', 'weather', 128, 36), roadName: '중부선', message: '강풍' } } });
+  const { map } = await mountLoaded();
+  sizeMap(map);
+  overPoints(map, ['a', 127, 37]);
+  overPoints(map, ['b', 128, 36]);
+  expect(mapTip().querySelector('.map-tip__name')!.textContent).toBe('중부선 강풍');
+  expect(mapTip().style.left).toBe('420px');
+  act(() => map.handlers.get('movestart')!({}));
+  expect(mapTip().classList.contains('is-on')).toBe(false);
+});
+
+test('near the top edge the incident tooltip flips below the point', async () => {
+  useConsole.setState({ incidents: { a: { ...accident, lat: 39.8 } } });
+  const { map } = await mountLoaded();
+  sizeMap(map);
+  overPoints(map, ['a', 127, 39.8]); // y = 20
+  expect(mapTip().classList.contains('is-below')).toBe(true);
+  expect(mapTip().style.top).toBe('32px');
+});
+
+test('if the hovered incident goes away the tooltip closes; if it changes the text follows', async () => {
+  useConsole.setState({ incidents: { a: accident } });
+  const { map } = await mountLoaded();
+  sizeMap(map);
+  overPoints(map, ['a', 127, 37]);
+  act(() => useConsole.setState({ incidents: { a: { ...accident, message: '정리 완료' } } }));
+  expect(mapTip().querySelector('.map-tip__name')!.textContent).toBe('경부선 정리 완료');
+  act(() => useConsole.setState({ incidents: {} }));
+  expect(mapTip().classList.contains('is-on')).toBe(false);
+});
+
+test('touch taps on a point do not leave a tooltip behind', async () => {
+  useConsole.setState({ incidents: { a: accident } });
+  const { map } = await mountLoaded();
+  sizeMap(map);
+  const pe = new Event('pointerdown') as Event & { pointerType: string };
+  pe.pointerType = 'touch';
+  act(() => { map.getContainer().dispatchEvent(pe); });
+  overPoints(map, ['a', 127, 37]);
+  expect(mapTip().classList.contains('is-on')).toBe(false);
+});
+
+test('the incident tooltip anchors on the incident itself, and follows it when it moves', async () => {
+  useConsole.setState({ incidents: { a: accident } });
+  const { map } = await mountLoaded();
+  sizeMap(map);
+  // 렌더된 점 좌표는 타일 양자화로 조금 어긋날 수 있다. 자리는 돌발 자체 좌표로 잡는다.
+  overPoints(map, ['a', 127.004, 37.003]);
+  expect(mapTip().style.left).toBe('320px');
+  act(() => useConsole.setState({ incidents: { a: { ...accident, lon: 128 } } }));
+  expect(mapTip().style.left).toBe('420px');
+});
+
+test('label and anchor come from the same feature when the top hit has no key', async () => {
+  useConsole.setState({ incidents: { b: { ...inc('b', 'weather', 128, 36), roadName: '중부선', message: '강풍' } } });
+  const { map } = await mountLoaded();
+  sizeMap(map);
+  act(() => map.handlers.get('mousemove:incidents-core')!({
+    features: [
+      { properties: null, geometry: { type: 'Point', coordinates: [127, 37] } },
+      { properties: { key: 'b' }, geometry: { type: 'Point', coordinates: [128, 36] } },
+    ],
+  }));
+  expect(mapTip().querySelector('.map-tip__name')!.textContent).toBe('중부선 강풍');
+  expect(mapTip().style.left).toBe('420px');
+});
+
+test('Enter selects the point the tooltip is showing, even after sliding between adjacent points', async () => {
+  useConsole.setState({ incidents: { a: accident, b: inc('b', 'weather', 127.05, 37) } });
+  const { map } = await mountLoaded();
+  sizeMap(map);
+  act(() => map.handlers.get('mouseenter:incidents-core')!({ features: [{ properties: { key: 'a' } }] }));
+  overPoints(map, ['a', 127, 37]);
+  overPoints(map, ['b', 127.05, 37]);
+  act(() => { map.getCanvas().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); });
+  expect(useConsole.getState().selectedKey).toBe('b');
 });

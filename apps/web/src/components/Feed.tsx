@@ -4,14 +4,11 @@ import { useMemo } from 'react';
 import type { Incident } from '@traffic-room/shared';
 import { CATEGORY_LABEL, categoryColor } from '@/lib/tokens';
 import { hhmm } from '@/lib/time';
+import { incidentTitle as title, tidy } from '@/lib/incident';
 import { useConsole, type FeedItem } from '@/store/console';
 
 const RECENT_MAX = 8;
 
-/** 원본 문구의 "** … **" 장식과 겹친 공백을 걷어 낸다. */
-const tidy = (s: string) => s.replace(/\*+/g, '').replace(/\s+/g, ' ').trim();
-
-const title = (i: Incident) => `${i.roadName} ${tidy(i.message) || i.detail}`.trim();
 const subtitle = (i: Incident) => tidy(i.lanesBlocked) || tidy(i.detail) || CATEGORY_LABEL[i.category];
 
 function Card({ item, selected, onPick }: { item: FeedItem; selected: boolean; onPick?: () => void }) {
