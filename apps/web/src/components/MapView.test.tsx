@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { ReactElement } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
-import type { Category, Incident, ServerMessage } from '@traffic-room/shared';
+import type { Category, Cctv, Incident, ServerMessage } from '@traffic-room/shared';
 import { useConsole } from '@/store/console';
 import { MapView } from './MapView';
 
@@ -10,6 +10,7 @@ const h = vi.hoisted(() => {
   const state = {
     maps: [] as FakeMap[],
     markers: 0,
+    instances: [] as Marker[],
   };
   type Handler = (...args: unknown[]) => void;
   type Layer = { id: string; paint: Record<string, unknown>; filter?: unknown };
@@ -54,16 +55,26 @@ const h = vi.hoisted(() => {
     remove() {}
   }
   class Marker {
-    constructor() {
+    element: HTMLElement;
+    options: Record<string, unknown>;
+    lngLats: Array<[number, number]> = [];
+    removed = false;
+    constructor(options: { element: HTMLElement } & Record<string, unknown>) {
       state.markers += 1;
+      this.options = options;
+      this.element = options.element;
+      state.instances.push(this);
     }
-    setLngLat() {
+    setLngLat(ll: [number, number]) {
+      this.lngLats.push(ll);
       return this;
     }
     addTo() {
       return this;
     }
-    remove() {}
+    remove() {
+      this.removed = true;
+    }
   }
   return { state, FakeMap, Marker };
 });
@@ -139,6 +150,7 @@ const featureProps = (map: InstanceType<typeof h.FakeMap>, sourceId: string) => 
 beforeEach(() => {
   h.state.maps.length = 0;
   h.state.markers = 0;
+  h.state.instances.length = 0;
   reduce = false;
   motionListeners.clear();
   rafCalls = 0;
@@ -318,4 +330,94 @@ test('when the road shapes fail to load the legend says so instead of staying em
   });
   await vi.waitFor(() => expect(document.querySelector('.map-legend .is-error')?.textContent).toBe('도로 정보를 불러오지 못했어요'));
   expect(map.getLayer('hw-base')).toBeUndefined();
+});
+
+// 지금 CCTV 패널이 틀고 있는 CCTV 자리 핀
+const cam = (id: string, name: string, lon: number, lat: number): Cctv => ({
+  id, name, lon, lat, url: `https://x/${id}.m3u8`, fetchedAt: '2026-11-12T00:00:00Z',
+});
+const cams = [
+  cam('seocho', '[경부선] 서초', 127.0, 37.48),
+  cam('near1', '[경부선] 천안', 127.171, 36.791),
+  cam('near2', '[경부선] 안성', 127.18, 36.78),
+];
+const withCams: Props = { ...noTraffic, cctvs: cams };
+const livePins = () => h.state.instances.filter((m) => m.element.classList.contains('live-pin'));
+
+test('one live pin sits on the active CCTV, anchored at its bottom', async () => {
+  await mountLoaded(withCams);
+  const pins = livePins();
+  expect(pins).toHaveLength(1);
+  expect(pins[0]!.options.anchor).toBe('bottom');
+  expect(pins[0]!.lngLats.at(-1)).toEqual([127.0, 37.48]);
+  const el = pins[0]!.element;
+  expect(el.textContent).toBe('실시간');
+  expect(el.title).toContain('[경부선] 서초');
+  expect(el.hasAttribute('tabindex')).toBe(false);
+  expect(el.classList.contains('is-down')).toBe(false);
+});
+
+test('the pin follows the active CCTV: incident → nearest, chip → that one (same marker)', async () => {
+  reduce = true;
+  useConsole.setState({ incidents: { a: inc('a', 'accident', 127.171, 36.79) } });
+  await mountLoaded(withCams);
+  act(() => useConsole.getState().select('a'));
+  const pin = livePins()[0]!;
+  expect(pin.lngLats.at(-1)).toEqual([127.171, 36.791]);
+  act(() => useConsole.getState().setCctv('near2'));
+  expect(pin.lngLats.at(-1)).toEqual([127.18, 36.78]);
+  expect(livePins()).toHaveLength(1);
+  expect(pin.element.title).toContain('[경부선] 안성');
+});
+
+test('with motion the pin glides to the new CCTV and lands exactly on it', async () => {
+  let now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+  useConsole.setState({ incidents: { a: inc('a', 'accident', 127.171, 36.79) } });
+  await mountLoaded(withCams);
+  const pin = livePins()[0]!;
+  act(() => useConsole.getState().select('a'));
+  expect(pin.lngLats.at(-1)).toEqual([127.0, 37.48]);
+  now = 100;
+  act(() => frames.shift()!(now));
+  const mid = pin.lngLats.at(-1)!;
+  expect(mid[0]).toBeGreaterThan(127.0);
+  expect(mid[0]).toBeLessThan(127.171);
+  now = 5_000;
+  act(() => frames.shift()!(now));
+  expect(pin.lngLats.at(-1)).toEqual([127.171, 36.791]);
+});
+
+test('when the panel cannot play the active CCTV the pin turns grey and stops saying 실시간', async () => {
+  await mountLoaded(withCams);
+  const el = livePins()[0]!.element;
+  act(() => useConsole.getState().setCctvUnavailable('seocho'));
+  expect(el.classList.contains('is-down')).toBe(true);
+  expect(el.textContent).toBe('연결 안 됨');
+  expect(el.classList.contains('is-pulsing')).toBe(false);
+  // 다른 CCTV 가 못 나오는 건 이 핀과 상관없다.
+  act(() => useConsole.getState().setCctvUnavailable('near1'));
+  expect(el.classList.contains('is-down')).toBe(false);
+  expect(el.textContent).toBe('실시간');
+});
+
+test('the live pin pulses, but not under reduced motion', async () => {
+  await mountLoaded(withCams);
+  expect(livePins()[0]!.element.classList.contains('is-pulsing')).toBe(true);
+  cleanup();
+  h.state.instances.length = 0;
+  reduce = true;
+  await mountLoaded(withCams);
+  expect(livePins()[0]!.element.classList.contains('is-pulsing')).toBe(false);
+});
+
+test('no CCTVs, no pin; unmount removes the pin', async () => {
+  const { view } = await mountLoaded();
+  expect(livePins()).toHaveLength(0);
+  view.rerender(<MapView {...withCams} />);
+  const pin = livePins()[0]!;
+  view.unmount();
+  expect(pin.removed).toBe(true);
 });

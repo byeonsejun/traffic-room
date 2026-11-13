@@ -161,7 +161,7 @@ export function Console() {
         />
       </aside>
       <main className="map">
-        <MapView speeds={traffic.speeds} trafficDataAt={traffic.dataAt} trafficError={traffic.error} />
+        <MapView cctvs={cctvs} speeds={traffic.speeds} trafficDataAt={traffic.dataAt} trafficError={traffic.error} />
         {Object.keys(notices).length > 0 && (
           <div className="notices" role="alert">
             {[...new Set(Object.values(notices))].map((n) => <p key={n}>{n}</p>)}

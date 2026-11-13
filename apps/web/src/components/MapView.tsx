@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { GeoJSONSource, MapSourceDataEvent, Map as MlMap, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Incident } from '@traffic-room/shared';
+import type { Cctv, Incident } from '@traffic-room/shared';
 import { FLOW_LEVELS, SPEED_SETS, dashAt, flowLayerId, prefersReducedMotion, startFlow, type SpeedSet } from '@/lib/flow';
 import { toGeoJson as highwaysGeoJson, speedGeoJson, type HighwaysFile } from '@/lib/highways';
 import { logFailure } from '@/lib/log';
 import { hhmm } from '@/lib/time';
 import { categoryColor, tokens } from '@/lib/tokens';
 import { isLoudArrival, useConsole } from '@/store/console';
+import { useActiveCctv } from './useActiveCctv';
 
 const KOREA_BOUNDS: [number, number, number, number] = [124.5, 33.0, 131.0, 38.7];
 // 끌거나 줄여도 한국 밖으로 나가지 않게 묶는다.
@@ -22,6 +23,9 @@ const FADE_MS = 1500;
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
 const HW_PATH = '/highways.json';
 const PULSE_MS = 1400 * 3;
+// 지금 보는 CCTV 핀이 새 자리로 미끄러지는 시간. 지도 이동(800ms)과 비슷하게 맞춘다.
+const PIN_GLIDE_MS = 700;
+const NO_CCTVS: Cctv[] = [];
 const WORKER_PATH = '/maplibre-gl-worker.mjs'; // scripts/copy-maplibre-worker.mjs 가 dev · build 전에 복사한다.
 
 const toGeoJson = (incidents: Record<string, Incident>) => ({
@@ -129,24 +133,78 @@ function setFade(map: MlMap, still: boolean) {
   for (const set of SPEED_SETS) for (const id of Object.keys(shownOpacity(set))) map.setPaintProperty(id, 'line-opacity-transition', fade);
 }
 
+type LivePin = {
+  marker: Marker;
+  el: HTMLElement;
+  label: HTMLElement;
+  at: [number, number];
+  frame: number;
+};
+
+/**
+ * 지금 CCTV 패널이 트는 CCTV 자리 핀. "실시간" 알약 → 짧은 꼬리 → 그 좌표의 점.
+ * 꼬리 끝 점의 가운데가 요소 아래 변에 오게 해 두어 anchor bottom 이면 점이 정확히 그 좌표에 놓인다.
+ */
+function createLivePin(ml: typeof import('maplibre-gl'), map: MlMap, at: [number, number]): LivePin {
+  const el = document.createElement('div');
+  el.className = 'live-pin';
+  el.setAttribute('role', 'img');
+  const label = document.createElement('span');
+  label.className = 'live-pin__label';
+  const tail = document.createElement('span');
+  tail.className = 'live-pin__tail';
+  const dot = document.createElement('span');
+  dot.className = 'live-pin__dot';
+  el.append(label, tail, dot);
+  const marker = new ml.Marker({ element: el, anchor: 'bottom' }).setLngLat(at).addTo(map);
+  return { marker, el, label, at, frame: 0 };
+}
+
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+
+/** 핀을 새 자리로 옮긴다. reduced motion 이면 바로, 아니면 잠깐 미끄러지듯. */
+function moveLivePin(pin: LivePin, to: [number, number]) {
+  cancelAnimationFrame(pin.frame);
+  const from = pin.at;
+  if (prefersReducedMotion() || (from[0] === to[0] && from[1] === to[1])) {
+    pin.at = to;
+    pin.marker.setLngLat(to);
+    return;
+  }
+  const start = performance.now();
+  const step = (now: number) => {
+    const t = Math.min(1, (now - start) / PIN_GLIDE_MS);
+    const k = easeInOut(t);
+    pin.at = t === 1 ? to : [from[0] + (to[0] - from[0]) * k, from[1] + (to[1] - from[1]) * k];
+    pin.marker.setLngLat(pin.at);
+    if (t < 1) pin.frame = requestAnimationFrame(step);
+  };
+  pin.frame = requestAnimationFrame(step);
+}
+
 type Props = {
+  /** CCTV 목록. 지금 패널이 트는 CCTV 자리에 핀을 꽂는다. */
+  cctvs?: Cctv[];
   speeds: Map<string, number> | null;
   trafficDataAt: string | null;
   trafficError: boolean;
 };
 
-export function MapView({ speeds, trafficDataAt, trafficError }: Props) {
+export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError }: Props) {
   const incidents = useConsole((s) => s.incidents);
   const feed = useConsole((s) => s.feed);
   const select = useConsole((s) => s.select);
   const selectedKey = useConsole((s) => s.selectedKey);
   const selected = useConsole((s) => (s.selectedKey ? s.incidents[s.selectedKey] : undefined));
+  const { active: cctv } = useActiveCctv(cctvs);
+  const cctvUnavailable = useConsole((s) => s.cctvUnavailable);
 
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const mlRef = useRef<typeof import('maplibre-gl') | null>(null);
   const markers = useRef(new Set<Marker>());
   const pulsed = useRef(new Set<number>());
+  const livePin = useRef<LivePin | null>(null);
   // 지도 load 때 넣을 최신 목록. 렌더 중이 아니라 커밋 뒤에 갱신한다.
   const latest = useRef(incidents);
   useEffect(() => {
@@ -282,6 +340,11 @@ export function MapView({ speeds, trafficDataAt, trafficError }: Props) {
       flow.halt();
       pulses.forEach((m) => m.remove());
       pulses.clear();
+      if (livePin.current) {
+        cancelAnimationFrame(livePin.current.frame);
+        livePin.current.marker.remove();
+        livePin.current = null;
+      }
       map?.remove();
       mapRef.current = null;
       highways.current = null;
@@ -340,6 +403,45 @@ export function MapView({ speeds, trafficDataAt, trafficError }: Props) {
     if (prefersReducedMotion()) map.jumpTo({ center });
     else map.easeTo({ center, duration: 800 });
   }, [selectedKey, selLon, selLat, ready]);
+
+  // 지금 보는 CCTV 핀: 처음 한 번 만들고, 패널이 다른 CCTV 를 틀면 setLngLat 으로 옮긴다.
+  const camLon = cctv?.lon;
+  const camLat = cctv?.lat;
+  useEffect(() => {
+    const map = mapRef.current;
+    const ml = mlRef.current;
+    if (!ready || !map || !ml) return;
+    const pin = livePin.current;
+    if (camLon === undefined || camLat === undefined) {
+      if (pin) pin.el.hidden = true;
+      return;
+    }
+    const to: [number, number] = [camLon, camLat];
+    if (!pin) {
+      livePin.current = createLivePin(ml, map, to);
+    } else if (pin.el.hidden) {
+      pin.el.hidden = false;
+      cancelAnimationFrame(pin.frame);
+      pin.at = to;
+      pin.marker.setLngLat(to);
+    } else {
+      moveLivePin(pin, to);
+    }
+  }, [ready, camLon, camLat]);
+
+  // 패널이 이 CCTV 를 틀지 못하면 핀도 회색으로 바꾸고 "실시간"이라 하지 않는다.
+  const camName = cctv?.name;
+  const down = !!cctv && cctvUnavailable === cctv.id;
+  useEffect(() => {
+    const pin = livePin.current;
+    if (!ready || !pin || camName === undefined) return;
+    pin.label.textContent = down ? '연결 안 됨' : '실시간';
+    const desc = `지금 보는 CCTV ${camName} · ${down ? '영상 연결 안 됨' : '실시간 영상'}`;
+    pin.el.title = desc;
+    pin.el.setAttribute('aria-label', desc);
+    pin.el.classList.toggle('is-down', down);
+    pin.el.classList.toggle('is-pulsing', !down && !prefersReducedMotion());
+  }, [ready, camName, camLon, camLat, down]);
 
   useEffect(() => {
     const top = feed[0];

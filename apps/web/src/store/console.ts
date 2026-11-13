@@ -49,12 +49,15 @@ interface ConsoleState {
   selectedKey: string | null;
   cctvId: string | null;
   cctvUrlOverride: Record<string, string | null>;
+  /** CCTV 패널이 지금 틀지 못하고 안내문을 띄운 CCTV id. 지도 핀이 "실시간"이라 말하지 않게 한다. */
+  cctvUnavailable: string | null;
   /** reset 이면 lastId 를 스냅샷 값으로 맞춘다(더 낮아도). 아니면 lastId 는 내려가지 않는다. */
   applySnapshot(s: Snapshot, opts?: { reset?: boolean }): void;
   applyServerMessage(m: ServerMessage, now: Date): void;
   setStatus(s: ConnStatus, retryInMs?: number): void;
   select(key: string | null): void;
   setCctv(id: string | null): void;
+  setCctvUnavailable(id: string | null): void;
 }
 
 export const useConsole = create<ConsoleState>()((set) => ({
@@ -66,6 +69,7 @@ export const useConsole = create<ConsoleState>()((set) => ({
   selectedKey: null,
   cctvId: null,
   cctvUrlOverride: {},
+  cctvUnavailable: null,
 
   applySnapshot: (s, opts) =>
     set((st) => {
@@ -118,4 +122,5 @@ export const useConsole = create<ConsoleState>()((set) => ({
   // 다른 돌발을 고르면 가장 가까운 CCTV부터 다시 보여 준다.
   select: (selectedKey) => set({ selectedKey, cctvId: null }),
   setCctv: (cctvId) => set({ cctvId }),
+  setCctvUnavailable: (cctvUnavailable) => set({ cctvUnavailable }),
 }));

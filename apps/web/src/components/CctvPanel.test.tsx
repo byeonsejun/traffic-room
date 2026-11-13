@@ -152,3 +152,23 @@ test('shows guidance when no url is available', () => {
   render(<CctvPanel cctvs={cams} send={vi.fn()} />);
   expect(screen.getByText(GUIDE)).toBeTruthy();
 });
+
+test('reports the CCTV it cannot play to the store, and clears it once another one plays', async () => {
+  render(<CctvPanel cctvs={cams} send={vi.fn()} />);
+  await ready(1);
+  expect(useConsole.getState().cctvUnavailable).toBeNull();
+  act(() => fatal());
+  answer('seocho', 'https://x/seocho.m3u8', 'cached');
+  expect(useConsole.getState().cctvUnavailable).toBe('seocho');
+  act(() => {
+    useConsole.setState({ incidents: { k: inc } });
+    useConsole.getState().select('k');
+  });
+  expect(useConsole.getState().cctvUnavailable).toBeNull();
+});
+
+test('a CCTV with no url is reported as unavailable', () => {
+  useConsole.setState({ cctvUrlOverride: { seocho: null } });
+  render(<CctvPanel cctvs={cams} send={vi.fn()} />);
+  expect(useConsole.getState().cctvUnavailable).toBe('seocho');
+});

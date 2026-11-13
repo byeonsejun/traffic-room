@@ -268,13 +268,56 @@ button.ev[aria-pressed='true'] { background: #1a2a3e; }
   .pulse-marker span { animation: none; display: none; }
 }
 
+/* 지금 보는 CCTV 핀: 실시간 배지 → 꼬리 → 좌표의 점. 점 가운데가 요소 아래 변이라 anchor bottom 이면 점이 좌표에 놓인다. */
+.maplibregl-marker.live-pin {
+  --pin: var(--jam);
+  z-index: 3; display: flex; flex-direction: column; align-items: center;
+  pointer-events: none; cursor: default;
+}
+.live-pin[hidden] { display: none; }
+.live-pin__label {
+  pointer-events: auto;
+  font-family: var(--font-plex), "IBM Plex Sans KR", system-ui, sans-serif;
+  font-weight: 600; line-height: 16px; letter-spacing: 0.01em; white-space: nowrap;
+  box-shadow: 0 0 0 1px var(--asphalt), 0 4px 12px rgb(0 0 0 / 0.5);
+  transition: background-color 0.25s, color 0.25s;
+}
+.live-pin__tail {
+  width: 2px; height: 9px; background: var(--pin);
+  box-shadow: 0 0 0 1px rgb(12 19 29 / 0.6);
+  transition: background-color 0.25s;
+}
+.live-pin__dot {
+  position: relative; width: 10px; height: 10px; margin-bottom: -5px; border-radius: 50%;
+  background: var(--pin); border: 2px solid var(--ink);
+  box-shadow: 0 0 0 1px var(--asphalt), 0 0 10px color-mix(in srgb, var(--pin) 70%, transparent);
+  transition: background-color 0.25s, box-shadow 0.25s;
+}
+.live-pin.is-pulsing .live-pin__dot::after {
+  content: ''; position: absolute; inset: -2px; border-radius: 50%;
+  border: 2px solid var(--pin); opacity: 0;
+  animation: live-pin-pulse 2s ease-out infinite;
+}
+@keyframes live-pin-pulse {
+  from { transform: scale(1); opacity: 0.7; }
+  to { transform: scale(3.2); opacity: 0; }
+}
+.live-pin.is-down { --pin: var(--mute); }
+.live-pin.is-down .live-pin__label { background: #263445; color: var(--ink); }
+.live-pin.is-down .live-pin__dot { border-color: #9AA7B6; box-shadow: 0 0 0 1px var(--asphalt); }
+@media (prefers-reduced-motion: reduce) {
+  .live-pin .live-pin__dot::after { animation: none; display: none; }
+  .live-pin__label, .live-pin__tail, .live-pin__dot { transition: none; }
+}
+
 /* CCTV panel */
 .cctv-panel { display: flex; flex-direction: column; background: var(--panel); }
 .cctv-panel .cam { position: relative; aspect-ratio: 3 / 2; background: #060a10; flex: none; }
 .cctv-panel .cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cctv-panel .live {
-  position: absolute; right: 12px; top: 10px; font-size: 12px;
-  background: var(--jam); color: #fff; border-radius: 4px; padding: 2px 8px;
+.cctv-panel .live { position: absolute; right: 12px; top: 10px; }
+/* 실시간 배지: CCTV 패널과 지도 핀이 같은 모양을 쓴다. */
+.cctv-panel .live, .live-pin__label {
+  font-size: 12px; background: var(--jam); color: #fff; border-radius: 4px; padding: 2px 8px;
 }
 .cctv-panel .err {
   position: absolute; inset: 0; display: grid; place-items: center; text-align: center;

@@ -1,11 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Cctv, ClientMessage } from '@traffic-room/shared';
-import { nearestCctvs } from '@/lib/geo';
 import { useConsole } from '@/store/console';
+import { useActiveCctv } from './useActiveCctv';
 
-const DEFAULT_NAME = '[경부선] 서초';
 const GUIDE = '이 CCTV 영상을 지금 불러올 수 없어요. 다른 CCTV를 골라 보세요.';
 const REFRESH_WAIT_MS = 10_000;
 const HLS_TYPE = 'application/vnd.apple.mpegurl';
@@ -13,17 +12,10 @@ const HLS_TYPE = 'application/vnd.apple.mpegurl';
 const chipLabel = (name: string) => name.replace(/\[.*?\]\s*/, '');
 
 export function CctvPanel({ cctvs, send }: { cctvs: Cctv[]; send: (m: ClientMessage) => void }) {
-  const incident = useConsole((s) => (s.selectedKey ? s.incidents[s.selectedKey] : undefined));
-  const cctvId = useConsole((s) => s.cctvId);
   const override = useConsole((s) => s.cctvUrlOverride);
   const setCctv = useConsole((s) => s.setCctv);
-
-  const candidates = useMemo(() => {
-    if (incident) return nearestCctvs([incident.lon, incident.lat], cctvs, 3);
-    const def = cctvs.find((c) => c.name === DEFAULT_NAME) ?? cctvs[0];
-    return def ? [def] : [];
-  }, [incident, cctvs]);
-  const active = candidates.find((c) => c.id === cctvId) ?? candidates[0];
+  const setUnavailable = useConsole((s) => s.setCctvUnavailable);
+  const { candidates, active } = useActiveCctv(cctvs);
 
   const url = active ? (active.id in override ? override[active.id] : active.url) : null;
   const activeId = active?.id;
@@ -39,6 +31,12 @@ export function CctvPanel({ cctvs, send }: { cctvs: Cctv[]; send: (m: ClientMess
   const pending = useRef<{ key: string; ov: unknown } | null>(null);
   const [failedKey, setFailedKey] = useState<string | null>(null);
   const failed = !!activeId && failedKey === `${activeId}|${url}`;
+  // 안내문을 띄운 CCTV 를 지도에도 알린다. 지도 핀은 이 CCTV 를 "실시간"이라 하지 않는다.
+  const unavailable = activeId && (!url || failed) ? activeId : null;
+  useEffect(() => {
+    setUnavailable(unavailable);
+  }, [unavailable, setUnavailable]);
+  useEffect(() => () => setUnavailable(null), [setUnavailable]);
 
   useEffect(() => {
     const video = videoRef.current;
