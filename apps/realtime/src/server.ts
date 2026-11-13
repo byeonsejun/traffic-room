@@ -5,6 +5,8 @@ import type { ItsClient } from '@traffic-room/its';
 import { parseClientMessage, type ClientMessage, type ServerMessage, type Timing } from '@traffic-room/shared';
 import { createHub, toIncidentMessage, type Hub } from './hub.ts';
 import { createDailyQuota, refreshCctv, type CctvUrlResult, type DailyQuota } from './cctv-refresh.ts';
+import type { MetricsState } from './metrics.ts';
+import { registerSse } from './sse.ts';
 
 export interface ServerDeps {
   db: Db;
@@ -23,6 +25,8 @@ export interface ServerDeps {
    */
   idleMs?: number;
   logger?: boolean;
+  /** 있으면 `GET /sse/metrics` 로 이 지표 상태를 흘린다. */
+  metrics?: MetricsState;
 }
 
 const RESUME_LIMIT = 200;
@@ -57,6 +61,7 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
   await app.register(fastifyWebsocket);
 
   app.get('/health', async () => ({ ok: true }));
+  if (deps.metrics) registerSse(app, deps.metrics, deps.allowedOrigins);
 
   app.get('/ws', { websocket: true }, (socket, req) => {
     const origin = req.headers.origin;
