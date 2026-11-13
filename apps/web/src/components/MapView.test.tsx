@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import type { ReactElement } from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import type { Category, Incident, ServerMessage } from '@traffic-room/shared';
 import { useConsole } from '@/store/console';
@@ -84,6 +85,12 @@ const arrived = (id: number, incident: Incident): ServerMessage => ({
 });
 
 let reduce = false;
+const motionListeners = new Set<() => void>();
+const setReduce = (v: boolean) => {
+  reduce = v;
+  motionListeners.forEach((fn) => fn());
+};
+let rafCalls = 0;
 
 const highways = {
   source: 'test',
@@ -111,20 +118,46 @@ async function mountLoaded(props: Props = noTraffic) {
   return { map, view };
 }
 
+const DATA_AT = '2026-11-13T02:00:00.000Z';
+const show = (view: { rerender: (ui: ReactElement) => void }, speeds: Map<string, number>) =>
+  view.rerender(<MapView speeds={speeds} trafficDataAt={DATA_AT} trafficError={false} />);
+/** 지도가 그 소스의 새 데이터를 타일로 다 만들었다고 알린다. */
+const tiled = (map: InstanceType<typeof h.FakeMap>, sourceId: string) =>
+  act(() => map.handlers.get('sourcedata')!({ sourceId, isSourceLoaded: true }));
+/** 마지막으로 정한 레이어별 불투명도. */
+const opacities = (map: InstanceType<typeof h.FakeMap>) => {
+  const out: Record<string, unknown> = {};
+  for (const [id, prop, v] of map.setPaintProperty.mock.calls) if (prop === 'line-opacity') out[id as string] = v;
+  return out;
+};
+const featureProps = (map: InstanceType<typeof h.FakeMap>, sourceId: string) => {
+  const calls = map.getSource(sourceId)!.setData.mock.calls;
+  const fc = calls.at(-1)![0] as { features: Array<{ properties: unknown }> };
+  return fc.features.map((f) => f.properties);
+}
+
 beforeEach(() => {
   h.state.maps.length = 0;
   h.state.markers = 0;
   reduce = false;
-  vi.stubGlobal('matchMedia', (q: string) => ({ matches: reduce && q.includes('reduce') }));
+  motionListeners.clear();
+  rafCalls = 0;
+  vi.stubGlobal('matchMedia', (q: string) => ({
+    get matches() { return reduce && q.includes('reduce'); },
+    addEventListener: (_: string, fn: () => void) => motionListeners.add(fn),
+    removeEventListener: (_: string, fn: () => void) => motionListeners.delete(fn),
+  }));
   vi.stubGlobal('fetch', fetchMock);
-  vi.stubGlobal('requestAnimationFrame', () => 0);
+  vi.stubGlobal('requestAnimationFrame', () => { rafCalls += 1; return rafCalls; });
   vi.stubGlobal('cancelAnimationFrame', () => {});
   fetchMock.mockClear();
+  fetchMock.mockImplementation(async () => new Response(JSON.stringify(highways), { status: 200 }));
   useConsole.setState(useConsole.getInitialState(), true);
 });
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 test('selecting an incident moves the map to it', async () => {
@@ -168,47 +201,118 @@ test('the map is held to Korea', async () => {
   });
 });
 
-test('highway lines stack base → glow → speed → flow, all under the incident dots', async () => {
+test('highway lines stack base → two speed sets (glow → speed → flow), all under the incident dots', async () => {
   const { map } = await mountLoaded();
   expect(fetchMock).toHaveBeenCalledWith('/highways.json', expect.anything());
   const hw = map.layers.filter((l) => l.id.startsWith('hw-')).map((l) => l.id);
-  expect(hw).toEqual(['hw-base', 'hw-glow', 'hw-speed', 'hw-flow-0', 'hw-flow-1', 'hw-flow-2', 'hw-flow-3', 'hw-flow-4']);
+  const set = (s: string) => [`hw-${s}-glow`, `hw-${s}-speed`, ...[0, 1, 2, 3, 4].map((i) => `hw-${s}-flow-${i}`)];
+  expect(hw).toEqual(['hw-base', ...set('a'), ...set('b')]);
   for (const id of hw) expect(map.before.get(id)).toBe('incidents-halo');
-  expect(map.getLayer('hw-flow-3')!.filter).toEqual(['==', ['get', 'lv'], 3]);
-  expect(map.getLayer('hw-speed')!.paint['line-color-transition']).toEqual({ duration: 1500, delay: 0 });
+  // 바탕선은 모든 구간을 한 번만 받는다.
+  expect(featureProps(map, 'highways')).toEqual([{ s: null, lv: null }, { s: null, lv: null }]);
+  expect(map.getLayer('hw-b-flow-3')!.filter).toEqual(['==', ['get', 'lv'], 3]);
+  expect(map.getLayer('hw-a-speed')!.paint['line-opacity']).toBe(0);
+  expect(map.getLayer('hw-a-speed')!.paint['line-opacity-transition']).toEqual({ duration: 1500, delay: 0 });
 });
 
-test('under reduced motion colours change without a transition', async () => {
+test('under reduced motion the sets switch without a transition', async () => {
   reduce = true;
   const { map } = await mountLoaded();
-  expect(map.getLayer('hw-speed')!.paint['line-color-transition']).toEqual({ duration: 0, delay: 0 });
+  expect(map.getLayer('hw-b-speed')!.paint['line-opacity-transition']).toEqual({ duration: 0, delay: 0 });
 });
 
-test('new speeds are pushed into the highway source', async () => {
+test('first speeds go into set A and fade in once tiled', async () => {
   const { map, view } = await mountLoaded();
-  const setData = map.getSource('highways')!.setData;
-  setData.mockClear();
-  view.rerender(<MapView speeds={new Map([['A', 75]])} trafficDataAt="2026-11-13T02:00:00.000Z" trafficError={false} />);
-  expect(setData).toHaveBeenCalledTimes(1);
-  const fc = setData.mock.calls[0]![0] as { features: Array<{ properties: unknown }> };
-  expect(fc.features.map((f) => f.properties)).toEqual([{ s: 75, lv: 3 }, { s: null, lv: null }]);
+  show(view, new Map([['A', 75]]));
+  expect(map.getSource('highways-a')!.setData).toHaveBeenCalledTimes(1);
+  expect(map.getSource('highways-b')!.setData).not.toHaveBeenCalled();
+  expect(featureProps(map, 'highways-a')).toEqual([{ s: 75, lv: 3 }]);
+  expect(opacities(map)).toEqual({});
+  tiled(map, 'highways-a');
+  expect(opacities(map)).toMatchObject({ 'hw-a-glow': 0.5, 'hw-a-speed': 1, 'hw-a-flow-0': 0.9, 'hw-a-flow-4': 0.9 });
+  expect(opacities(map)).not.toHaveProperty('hw-b-speed');
 });
 
-test('speed colours fade in only once the new data has been tiled', async () => {
+test('new speeds are written to the hidden set, then the sets crossfade', async () => {
   const { map, view } = await mountLoaded();
-  view.rerender(<MapView speeds={new Map([['A', 75]])} trafficDataAt="2026-11-13T02:00:00.000Z" trafficError={false} />);
-  const opacity = () => map.setPaintProperty.mock.calls.filter(([, prop]) => prop === 'line-opacity');
-  expect(opacity()).toHaveLength(0);
-  act(() => map.handlers.get('sourcedata')!({ sourceId: 'highways', isSourceLoaded: true }));
-  expect(opacity().map(([id]) => id)).toEqual(expect.arrayContaining(['hw-glow', 'hw-speed', 'hw-flow-0', 'hw-flow-4']));
+  show(view, new Map([['A', 75]]));
+  tiled(map, 'highways-a');
+  const baseWrites = map.getSource('highways')!.setData.mock.calls.length;
+  show(view, new Map([['A', 30]]));
+  expect(map.getSource('highways')!.setData).toHaveBeenCalledTimes(baseWrites);
+  expect(featureProps(map, 'highways-b')).toEqual([{ s: 30, lv: 1 }]);
+  expect(map.getSource('highways-a')!.setData).toHaveBeenCalledTimes(1);
+  // 새 색이 타일로 다 만들어질 때까지 옛 색을 그대로 둔다.
+  expect(opacities(map)['hw-a-speed']).toBe(1);
+  tiled(map, 'highways-b');
+  expect(opacities(map)).toMatchObject({ 'hw-a-speed': 0, 'hw-a-glow': 0, 'hw-a-flow-3': 0, 'hw-b-speed': 1, 'hw-b-glow': 0.5, 'hw-b-flow-3': 0.9 });
+
+  // 다음 갱신은 다시 A 로 간다.
+  show(view, new Map([['A', 90]]));
+  expect(featureProps(map, 'highways-a')).toEqual([{ s: 90, lv: 3 }]);
+  tiled(map, 'highways-a');
+  expect(opacities(map)).toMatchObject({ 'hw-a-speed': 1, 'hw-b-speed': 0 });
+});
+
+test('a sourcedata event from the visible set does not trigger the crossfade', async () => {
+  const { map, view } = await mountLoaded();
+  show(view, new Map([['A', 75]]));
+  tiled(map, 'highways-a');
+  show(view, new Map([['A', 30]]));
+  tiled(map, 'highways-a');
+  expect(opacities(map)['hw-a-speed']).toBe(1);
+  expect(opacities(map)).not.toHaveProperty('hw-b-speed');
+});
+
+test('the flow loop starts only once speeds are revealed', async () => {
+  const { map, view } = await mountLoaded();
+  expect(rafCalls).toBe(0);
+  show(view, new Map([['A', 75]]));
+  expect(rafCalls).toBe(0);
+  tiled(map, 'highways-a');
+  expect(rafCalls).toBeGreaterThan(0);
+});
+
+test('turning on reduced motion at runtime stops the flow and drops transitions; turning it off restarts', async () => {
+  const cancel = vi.fn();
+  vi.stubGlobal('cancelAnimationFrame', cancel);
+  const { map, view } = await mountLoaded();
+  show(view, new Map([['A', 75]]));
+  tiled(map, 'highways-a');
+  const transitions = () =>
+    map.setPaintProperty.mock.calls.filter(([id, prop]) => id === 'hw-b-speed' && prop === 'line-opacity-transition').map(([, , v]) => v);
+
+  act(() => setReduce(true));
+  expect(cancel).toHaveBeenCalled();
+  expect(transitions().at(-1)).toEqual({ duration: 0, delay: 0 });
+
+  const before = rafCalls;
+  act(() => setReduce(false));
+  expect(rafCalls).toBeGreaterThan(before);
+  expect(transitions().at(-1)).toEqual({ duration: 1500, delay: 0 });
 });
 
 test('the legend names each state and the traffic time', async () => {
-  const { view } = await mountLoaded({ speeds: new Map(), trafficDataAt: '2026-11-13T02:00:00.000Z', trafficError: false });
+  const { view } = await mountLoaded({ speeds: new Map(), trafficDataAt: DATA_AT, trafficError: false });
   for (const label of ['원활', '서행', '정체', '데이터 없음', '교통 11:00 기준']) expect(view.getByText(label)).toBeTruthy();
 });
 
 test('when traffic fails the legend says so', async () => {
   const { view } = await mountLoaded({ speeds: null, trafficDataAt: null, trafficError: true });
   expect(view.getByText('교통 정보를 불러오지 못했어요')).toBeTruthy();
+});
+
+test('when the road shapes fail to load the legend says so instead of staying empty', async () => {
+  fetchMock.mockImplementation(async () => new Response('nope', { status: 500 }));
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  render(<MapView speeds={new Map([['A', 75]])} trafficDataAt={DATA_AT} trafficError={false} />);
+  await act(async () => {
+    await vi.dynamicImportSettled();
+  });
+  const map = h.state.maps.at(-1)!;
+  await act(async () => {
+    map.handlers.get('load')!();
+  });
+  await vi.waitFor(() => expect(document.querySelector('.map-legend .is-error')?.textContent).toBe('도로 정보를 불러오지 못했어요'));
+  expect(map.getLayer('hw-base')).toBeUndefined();
 });

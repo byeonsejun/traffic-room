@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
-import type { ServerMessage } from '@traffic-room/shared';
+import type { Metrics, ServerMessage } from '@traffic-room/shared';
 import type { RealtimeClientOptions } from '@/lib/realtime-client';
 import { useConsole, type Snapshot } from '@/store/console';
+import { useMetrics } from '@/store/metrics';
 import { Console } from './Console';
 
 // Console 은 모듈을 읽을 때 실시간 서버 주소를 정한다. import 보다 먼저 넣는다.
@@ -28,6 +29,17 @@ vi.mock('@/lib/realtime-client', () => ({
   },
 }));
 
+type MetricsClientOptions = { url: string; onMetrics: (m: Metrics) => void; onStatus: (s: 'open' | 'retry') => void };
+const streams: Array<{ opts: MetricsClientOptions; close: ReturnType<typeof vi.fn> }> = [];
+vi.mock('@/lib/metrics-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/metrics-client')>()),
+  createMetricsClient: (opts: MetricsClientOptions) => {
+    const s = { opts, close: vi.fn() };
+    streams.push(s);
+    return s;
+  },
+}));
+
 const snap = (latestId: number, keys: string[] = []): Snapshot => ({
   latestId,
   collectedAt: null,
@@ -48,7 +60,7 @@ let traffic: () => Response;
 const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
   const path = String(input);
   if (path === '/api/cctvs') return ok([]);
-  if (path === '/api/traffic') return traffic();
+  if (path.startsWith('/api/traffic')) return traffic();
   const next = snapshots.shift();
   if (!next) throw new Error('unexpected snapshot fetch');
   return next();
@@ -66,10 +78,12 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockClear();
   clients.length = 0;
+  streams.length = 0;
   mapProps.length = 0;
   snapshots = [];
   traffic = () => ok({ id: null });
   useConsole.setState(useConsole.getInitialState(), true);
+  useMetrics.setState(useMetrics.getInitialState(), true);
 });
 afterEach(() => {
   cleanup();
@@ -182,4 +196,152 @@ test('with no traffic snapshot yet the map gets no speeds and no error', async (
   const last = mapProps.at(-1)!;
   expect(last.speeds).toBeNull();
   expect(last.trafficError).toBe(false);
+});
+
+const trafficCalls = () => fetchMock.mock.calls.filter(([p]) => String(p).startsWith('/api/traffic'));
+const trafficBody = (id: number, speeds: [string, number][], dataAt = '2026-11-13T02:00:00.000Z') =>
+  ({ id, dataAt, nextShowAt: null, speeds });
+const metrics = (trafficSnapshotId: number | null, dataAt: string | null = '2026-11-13T02:00:00.000Z'): Metrics => ({
+  trafficSnapshotId,
+  trafficDataAt: dataAt,
+  nextTrafficAt: null,
+  traffic: null,
+  incidents: { total: 0, byCategory: { accident: 0, breakdown: 0, weather: 0, construction: 0, report: 0, other: 0 } },
+  delayMinutes: 60,
+  intervalMinutes: 60,
+});
+const push = async (m: Metrics) => {
+  act(() => streams[0]!.opts.onMetrics(m));
+  await flush();
+};
+
+test('the metrics stream opens on the SSE address next to the realtime server', async () => {
+  snapshots.push(() => ok(snap(1)));
+  const view = await mount();
+  expect(streams.map((s) => s.opts.url)).toEqual(['http://rt.test/sse/metrics']);
+  view.unmount();
+  expect(streams[0]!.close).toHaveBeenCalled();
+});
+
+test('the same traffic snapshot id does not refetch speeds', async () => {
+  snapshots.push(() => ok(snap(1)));
+  traffic = () => ok(trafficBody(1, [['A', 75]]));
+  await mount();
+  await push(metrics(1));
+  await push(metrics(1));
+  expect(trafficCalls()).toHaveLength(1);
+  expect(useMetrics.getState().metrics?.trafficSnapshotId).toBe(1);
+});
+
+test('a new traffic snapshot id refetches speeds and hands them to the map', async () => {
+  snapshots.push(() => ok(snap(1)));
+  const bodies = [trafficBody(1, [['A', 75]]), trafficBody(2, [['A', 30]], '2026-11-13T03:00:00.000Z')];
+  traffic = () => ok(bodies.shift());
+  await mount();
+  await push(metrics(1));
+  await push(metrics(2, '2026-11-13T03:00:00.000Z'));
+  expect(trafficCalls()).toHaveLength(2);
+  const last = mapProps.at(-1)!;
+  expect(last.speeds).toEqual(new Map([['A', 30]]));
+  expect(last.trafficDataAt).toBe('2026-11-13T03:00:00.000Z');
+  // 같은 id 가 다시 와도 또 받지 않는다.
+  await push(metrics(2, '2026-11-13T03:00:00.000Z'));
+  expect(trafficCalls()).toHaveLength(2);
+});
+
+test('metrics arriving while the first fetch is in flight do not double it', async () => {
+  snapshots.push(() => ok(snap(1)));
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const body = trafficBody(4, [['A', 75]]);
+  traffic = () => new Response(new ReadableStream({
+    async start(c) {
+      await gate;
+      c.enqueue(new TextEncoder().encode(JSON.stringify(body)));
+      c.close();
+    },
+  }), { status: 200 });
+  render(<Console />);
+  act(() => streams[0]!.opts.onMetrics(metrics(4)));
+  release();
+  await flush();
+  await flush();
+  expect(trafficCalls()).toHaveLength(1);
+  expect(mapProps.at(-1)!.speeds).toEqual(new Map([['A', 75]]));
+});
+
+test('when the SSE drops the map keeps the last speeds', async () => {
+  snapshots.push(() => ok(snap(1)));
+  traffic = () => ok(trafficBody(1, [['A', 75]]));
+  await mount();
+  await push(metrics(1));
+  act(() => streams[0]!.opts.onStatus('retry'));
+  await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60_000); });
+  const last = mapProps.at(-1)!;
+  expect(last.speeds).toEqual(new Map([['A', 75]]));
+  expect(last.trafficError).toBe(false);
+});
+
+test('a failed refetch keeps the old speeds without flagging an error, then retries', async () => {
+  snapshots.push(() => ok(snap(1)));
+  const replies = [() => ok(trafficBody(1, [['A', 75]])), fail, () => ok(trafficBody(2, [['A', 30]]))];
+  traffic = () => replies.shift()!();
+  await mount();
+  await push(metrics(2));
+  expect(trafficCalls()).toHaveLength(2);
+  let last = mapProps.at(-1)!;
+  expect(last.speeds).toEqual(new Map([['A', 75]]));
+  expect(last.trafficError).toBe(false);
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(trafficCalls()).toHaveLength(3);
+  last = mapProps.at(-1)!;
+  expect(last.speeds).toEqual(new Map([['A', 30]]));
+});
+
+test('a refetch that still returns the old snapshot (cache) is retried a few times, then given up', async () => {
+  snapshots.push(() => ok(snap(1)));
+  traffic = () => ok(trafficBody(1, [['A', 75]]));
+  await mount();
+  await push(metrics(2));
+  await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60_000); });
+  // 처음 1회 + 새 id 로 3번까지
+  expect(trafficCalls()).toHaveLength(4);
+  expect(mapProps.at(-1)!.speeds).toEqual(new Map([['A', 75]]));
+});
+
+test('a 503 from /api/traffic leaves base lines with the legend notice, incidents still flow', async () => {
+  snapshots.push(() => ok(snap(1, ['a'])));
+  traffic = fail;
+  await mount();
+  const last = mapProps.at(-1)!;
+  expect(last.speeds).toBeNull();
+  expect(last.trafficError).toBe(true);
+  // 돌발 피드는 교통과 따로 계속 들어온다.
+  act(() => useConsole.getState().applyServerMessage({
+    id: 2, type: 'incident.arrived', ts: new Date().toISOString(),
+    payload: { incident: { ...snap(0, ['k2']).incidents[0]! } },
+  }, new Date()));
+  expect(Object.keys(useConsole.getState().incidents).sort()).toEqual(['a', 'k2']);
+  expect(document.querySelector('.feed')?.textContent).toContain('경부선');
+});
+
+test('a never-loaded traffic recovers when a metrics event names a snapshot', async () => {
+  snapshots.push(() => ok(snap(1)));
+  const replies = [fail, () => ok(trafficBody(5, [['A', 75]]))];
+  traffic = () => replies.shift()!();
+  await mount();
+  expect(mapProps.at(-1)!.trafficError).toBe(true);
+  await push(metrics(5));
+  const last = mapProps.at(-1)!;
+  expect(last.speeds).toEqual(new Map([['A', 75]]));
+  expect(last.trafficError).toBe(false);
+});
+
+test('the top bar shows the time of the speeds on screen and goes stale', async () => {
+  vi.setSystemTime(new Date('2026-11-13T06:00:00.000Z'));
+  snapshots.push(() => ok(snap(1)));
+  traffic = () => ok(trafficBody(1, [['A', 75]], '2026-11-13T02:59:00.000Z')); // 3시간 1분 전
+  await mount();
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(document.querySelector('.top .traffic-at.stale')?.textContent).toContain('교통 11:59 기준');
 });

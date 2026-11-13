@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { TopBar } from './TopBar';
 
 beforeEach(() => {
@@ -50,4 +50,37 @@ test('exactly 3 hours is still fresh', () => {
 test('no collection time yet renders nothing extra', () => {
   bar(null);
   expect(screen.queryByText(/마지막 수집/)).toBeNull();
+});
+
+const timing = { delayMinutes: 60, intervalMinutes: 60 };
+const withTraffic = (trafficDataAt: string | null) =>
+  render(<TopBar status="open" live={true} delayMinutes={60} trafficDataAt={trafficDataAt} trafficTiming={timing} />);
+
+test('shows the traffic time it is based on', () => {
+  // 13:00 KST, 2시간 30분 전
+  withTraffic('2026-11-12T04:00:00Z');
+  act(() => { vi.advanceTimersByTime(1000); });
+  const el = screen.getByText('교통 13:00 기준');
+  expect(el.className).not.toContain('stale');
+});
+
+test('traffic older than delay + 2 × interval turns stale', () => {
+  // 12:29 KST, 3시간 1분 전
+  const { container } = withTraffic('2026-11-12T03:29:00Z');
+  act(() => { vi.advanceTimersByTime(1000); });
+  expect(container.querySelector('.traffic-at.stale')).not.toBeNull();
+  expect(screen.getByText(/교통 12:29 기준/).textContent).toContain('갱신 늦음');
+});
+
+test('traffic turns stale as time passes without a new snapshot', () => {
+  const { container } = withTraffic('2026-11-12T03:31:00Z'); // 2시간 59분 전
+  act(() => { vi.advanceTimersByTime(1000); });
+  expect(container.querySelector('.traffic-at.stale')).toBeNull();
+  act(() => { vi.advanceTimersByTime(2 * 60_000); });
+  expect(container.querySelector('.traffic-at.stale')).not.toBeNull();
+});
+
+test('no traffic time renders no traffic label', () => {
+  withTraffic(null);
+  expect(screen.queryByText(/교통 .* 기준/)).toBeNull();
 });

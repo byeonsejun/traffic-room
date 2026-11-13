@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { toGeoJson, type HighwaysFile } from './highways.ts';
+import { speedGeoJson, toGeoJson, type HighwaysFile } from './highways.ts';
 
 const file: HighwaysFile = {
   source: 'test',
@@ -25,4 +25,10 @@ test('every link becomes a line, links without a speed stay null', () => {
 test('without speeds every link is a bare base line', () => {
   const fc = toGeoJson(file, null);
   expect(fc.features.every((f) => f.properties.s === null && f.properties.lv === null)).toBe(true);
+});
+
+test('the speed layer gets only links that have a speed, sharing the base geometry', () => {
+  const fc = speedGeoJson(file, new Map([['C', 55], ['A', 75], ['Z', 90]]));
+  expect(fc.features.map((f) => f.properties)).toEqual([{ s: 75, lv: 3 }, { s: 55, lv: 2 }]);
+  expect(fc.features[1]!.geometry.coordinates).toBe(file.links[2]![3]);
 });

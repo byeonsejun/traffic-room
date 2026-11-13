@@ -27,9 +27,11 @@ test('faster levels step their dashes more often, the jam level stands still', (
   const stop = startFlow(map as never);
   vi.advanceTimersByTime(2000);
   stop();
-  expect(callsFor(map, 'hw-flow-0')).toBe(0);
-  expect(callsFor(map, 'hw-flow-1')).toBeGreaterThan(0);
-  expect(callsFor(map, 'hw-flow-4')).toBeGreaterThan(callsFor(map, 'hw-flow-1'));
+  expect(callsFor(map, 'hw-a-flow-0')).toBe(0);
+  expect(callsFor(map, 'hw-a-flow-1')).toBeGreaterThan(0);
+  expect(callsFor(map, 'hw-a-flow-4')).toBeGreaterThan(callsFor(map, 'hw-a-flow-1'));
+  // 바뀌는 중에 두 겹의 점선이 어긋나 보이지 않게 숨은 쪽도 같은 박자로 민다.
+  expect(callsFor(map, 'hw-b-flow-4')).toBe(callsFor(map, 'hw-a-flow-4'));
   for (const [, prop] of map.setPaintProperty.mock.calls) expect(prop).toBe('line-dasharray');
 });
 

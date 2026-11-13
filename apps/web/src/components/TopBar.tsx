@@ -1,9 +1,10 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import { delayLabel } from '@traffic-room/shared';
+import { delayLabel, readTiming } from '@traffic-room/shared';
 import { hhmm, hhmmss, mdhhmm } from '@/lib/time';
 import type { ConnStatus } from '@/lib/realtime-client';
+import { isTrafficStale } from '@/store/metrics';
 import { ConnectionBadge } from './ConnectionBadge';
 
 const subscribeSeconds = (onChange: () => void) => {
@@ -37,15 +38,44 @@ function LastCollected({ collectedAt }: { collectedAt: string }) {
   );
 }
 
-type Props = { status: ConnStatus; retryInMs?: number; live: boolean; beat?: number; collectedAt?: string | null; delayMinutes: number };
+type TrafficTiming = { delayMinutes: number; intervalMinutes: number };
 
-export function TopBar({ status, retryInMs, live, beat, collectedAt, delayMinutes }: Props) {
+/**
+ * 지도에 깔린 속도가 몇 시 데이터인지. 지연 + 수집 간격 두 번을 넘기면 갱신이 멈춘 것으로 보고 노랗게 알린다.
+ * 색만으로 알리지 않도록 글로도 덧붙인다.
+ */
+function TrafficAt({ dataAt, timing }: { dataAt: string; timing: TrafficTiming }) {
+  const sec = useSyncExternalStore(subscribeSeconds, currentSecond, noSecond);
+  const stale = sec !== null && isTrafficStale(dataAt, new Date(sec * 1000), timing);
+  return stale ? (
+    <span className="traffic-at stale">교통 {hhmm(dataAt)} 기준 · 갱신 늦음</span>
+  ) : (
+    <span className="traffic-at">교통 {hhmm(dataAt)} 기준</span>
+  );
+}
+
+type Props = {
+  status: ConnStatus;
+  retryInMs?: number;
+  live: boolean;
+  beat?: number;
+  collectedAt?: string | null;
+  delayMinutes: number;
+  trafficDataAt?: string | null;
+  trafficTiming?: TrafficTiming;
+};
+
+// 지표가 아직 없으면 설정 기본값(지연 60 · 간격 60)으로 판단한다.
+const DEFAULT_TIMING: TrafficTiming = readTiming({});
+
+export function TopBar({ status, retryInMs, live, beat, collectedAt, delayMinutes, trafficDataAt, trafficTiming = DEFAULT_TIMING }: Props) {
   return (
     <header className="top">
       <h1>전국 도로 상황실</h1>
       <ConnectionBadge status={status} retryInMs={retryInMs} live={live} beat={beat} />
       <span className="delay">{delayLabel(delayMinutes)}</span>
       {collectedAt && <LastCollected collectedAt={collectedAt} />}
+      {trafficDataAt && <TrafficAt dataAt={trafficDataAt} timing={trafficTiming} />}
       <Clock />
     </header>
   );

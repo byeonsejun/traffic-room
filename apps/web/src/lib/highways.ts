@@ -29,3 +29,14 @@ export function toGeoJson(file: HighwaysFile, speeds: Map<string, number> | null
     }),
   };
 }
+
+/** 속도가 있는 구간만. 바탕선과 좌표 배열을 같이 쓰고 속성만 새로 만든다. */
+export function speedGeoJson(file: HighwaysFile, speeds: Map<string, number>): HighwayCollection {
+  const features: HighwayFeature[] = [];
+  for (const [linkId, , , coordinates] of file.links) {
+    const s = speeds.get(linkId);
+    if (s === undefined) continue;
+    features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates }, properties: { s, lv: flowLevel(s) } });
+  }
+  return { type: 'FeatureCollection', features };
+}

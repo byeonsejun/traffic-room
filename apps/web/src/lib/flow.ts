@@ -19,7 +19,14 @@ export function flowLevel(kmh: number, levels: FlowLevel[] = FLOW_LEVELS): numbe
   return i === -1 ? levels.length - 1 : i;
 }
 
-export const flowLayerId = (level: number) => `hw-flow-${level}`;
+/**
+ * 속도선은 두 벌(A · B)을 둔다. 새 속도는 숨은 벌에 쓰고 불투명도를 맞바꿔 서서히 바꾼다.
+ * MapLibre 는 데이터에 따라 정한 색을 보간하지 않아서 이렇게 겹쳐 바꾼다.
+ */
+export type SpeedSet = 'a' | 'b';
+export const SPEED_SETS: SpeedSet[] = ['a', 'b'];
+
+export const flowLayerId = (set: SpeedSet, level: number) => `hw-${set}-flow-${level}`;
 
 // 점선 한 주기(선 두께의 배수): 짧은 획 하나와 긴 틈. DASH_STEPS 번에 걸쳐 한 주기를 밀어낸다.
 const DASH = 2;
@@ -43,6 +50,7 @@ export const prefersReducedMotion = () =>
 
 /**
  * 단계별 흐름 레이어의 점선을 단계마다 다른 간격으로 한 칸씩 민다. 루프는 하나만 돈다.
+ * 두 벌을 같은 박자로 밀어 바뀌는 동안 점선이 어긋나 보이지 않게 한다.
  * reduced motion 이면 시작하지 않는다. 돌려준 함수로 멈춘다.
  */
 export function startFlow(map: Pick<MlMap, 'setPaintProperty'>, levels: FlowLevel[] = FLOW_LEVELS): () => void {
@@ -57,7 +65,7 @@ export function startFlow(map: Pick<MlMap, 'setPaintProperty'>, levels: FlowLeve
       const step = Math.floor(now / l.dashStepMs) % DASH_STEPS;
       if (step === shown[i]) return;
       shown[i] = step;
-      map.setPaintProperty(flowLayerId(i), 'line-dasharray', dashAt(step));
+      for (const set of SPEED_SETS) map.setPaintProperty(flowLayerId(set, i), 'line-dasharray', dashAt(step));
     });
     raf = requestAnimationFrame(tick);
   };
