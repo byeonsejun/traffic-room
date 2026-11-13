@@ -109,13 +109,13 @@ const tipHead = (text: string) => `<div style="color:${tokens.mute};margin-botto
 // ---------------------------------------------------------------- 노선 × 시간
 
 /**
- * 히트맵 색: 느림을 밝기로 읽는 따뜻한 한 계열. 빠른 칸은 패널에 가깝게 가라앉고, 느릴수록 #FF4D4F 로 밝아진다.
- * 색상(OKLCH h ≈ 25)은 그대로 두고 밝기만 0.43 → 0.67 로 올렸다.
- * dataviz validate_palette.js --ordinal --mode dark --surface #111B28 로 확인:
- * 밝기 단조 · 이웃 단계 ΔL ≥ 0.06 · 가장 어두운(빠른) 칸도 패널과 2.06:1 · 색상 차 1°.
- * 순서는 빠름 → 느림.
+ * 히트맵 색: 느림만 눈에 띄게. 빠른 칸(85 이상)은 패널보다 한 단 밝은 차가운 회청색, 70–85 는 조금 따뜻하고 흐린 색,
+ * 55–70 호박빛 빨강, 40–55 빨강, 40 미만은 가장 밝은 #FF4D4F. 평범한 날은 지도가 조용하고 정체 시간만 불이 켜진다.
+ * 밝기는 단조로 오르고 이웃 단계 ΔL ≥ 0.06 이다. 빠른 끝이 무채색에 가까워 검사기의 대비(2:1) · 한 색상 검사는
+ * 통과하지 않는다 — 의미를 우선한 컨트롤러 결정이고, 값은 표로 보기와 툴팁이 함께 준다.
+ * (validate_palette.js --ordinal --mode dark --surface #111B28 결과는 task-13-report.md 에 있다.) 순서는 빠름 → 느림.
  */
-export const HEAT_COLORS = ['#6f413d', '#8e4944', '#af504b', '#d25550', '#ff4d4f'] as const;
+export const HEAT_COLORS = ['#26374d', '#5f494c', '#a44c1d', '#d64740', '#ff4d4f'] as const;
 /** 단계 경계(km/h), 빠름 → 느림. 40 · 70 은 정체 · 서행 · 원활 경계와 같고, 사이를 15km/h 씩 나눴다. */
 export const HEAT_PIECES = [
   { gte: 85, label: '85 이상' },
@@ -238,12 +238,12 @@ export function heatmapOption(rows: HeatRows, { compact = false } = {}): ECharts
         emphasis: { itemStyle: { borderColor: tokens.ink, borderWidth: 1.5 } },
       },
       {
-        // 기록 없는 칸: 칠하지 않고 선 색 테두리만. 가장 빠른(가장 어두운) 칸과도 한눈에 다르다.
+        // 기록 없는 칸: 속은 패널색 그대로, 밝은 회청 테두리만. 속이 찬 가장 빠른 칸과 한눈에 다르다.
         type: 'heatmap',
         name: '기록 없음',
         data: empty,
         progressive: 0,
-        itemStyle: { borderColor: '#2a3c52', borderWidth: 1, borderRadius: 3 },
+        itemStyle: { borderColor: '#4a5f78', borderWidth: 1, borderRadius: 3 },
         emphasis: { itemStyle: { borderColor: tokens.mute, borderWidth: 1 } },
       },
     ],

@@ -80,7 +80,8 @@ describe('heatmapOption', () => {
     expect([o.yAxis].flat()).toHaveLength(1);
   });
 
-  test('one visual map in a single validated warm family, fast dim to slow #FF4D4F', () => {
+  test('one visual map from a near-neutral fast end to the brightest #FF4D4F for the slowest', () => {
+    expect(HEAT_COLORS).toEqual(['#26374d', '#5f494c', '#a44c1d', '#d64740', '#ff4d4f']);
     expect([o.visualMap].flat()).toHaveLength(1);
     expect(o.visualMap.seriesIndex).toEqual([0, 1]);
     expect(o.visualMap.pieces.slice(0, 5).map((p: AnyOption) => p.color)).toEqual(HEAT_COLORS);

@@ -4,6 +4,7 @@ import type { Metrics } from '@traffic-room/shared';
 import type { MetricsClientOptions } from '@/lib/metrics-client';
 import { useMetrics } from '@/store/metrics';
 import { Insights } from './Insights';
+import { countdown } from './KpiTiles';
 
 // 지표 스트림 주소는 모듈을 읽을 때 정해진다. import 보다 먼저 넣는다.
 vi.hoisted(() => {
@@ -103,9 +104,9 @@ test('tiles follow SSE metrics and the next update counts down every second', as
   expect(tile('정체 구간 길이').textContent).toContain('312');
   expect(tile('진행 중 돌발').textContent).toContain('41');
   expect(tile('진행 중 돌발').textContent).toContain('사고 5 · 고장 23');
-  expect(tile('다음 교통 갱신까지').textContent).toContain('18:30');
+  expect(tile('다음 교통 갱신까지').textContent).toContain('18분 30초');
   act(() => vi.advanceTimersByTime(1000));
-  expect(tile('다음 교통 갱신까지').textContent).toContain('18:29');
+  expect(tile('다음 교통 갱신까지').textContent).toContain('18분 29초');
 });
 
 test('with no next update time the countdown shows a dash and why', async () => {
@@ -158,4 +159,10 @@ test('a failed first load retries with backoff (30 s, then 60 s) until it succee
   // 성공한 뒤에는 더 다시 받지 않는다.
   await act(async () => { await vi.advanceTimersByTimeAsync(600_000); });
   expect(calls()).toBe(3);
+});
+
+test('the countdown reads as a duration, not a clock time', () => {
+  expect(countdown(40)).toBe('40초');
+  expect(countdown(18 * 60 + 40)).toBe('18분 40초');
+  expect(countdown(3600 + 5 * 60 + 12)).toBe('1시간 5분');
 });

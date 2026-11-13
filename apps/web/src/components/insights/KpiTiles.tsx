@@ -14,14 +14,28 @@ const currentSecond = () => Math.floor(Date.now() / 1000);
 const noSecond = () => null;
 
 const fmt = (n: number) => Math.round(n).toLocaleString('ko-KR');
-const two = (n: number) => String(n).padStart(2, '0');
 
-/** 남은 초를 "18:30" · "1:02:03" 으로. */
-export function countdown(sec: number): string {
+type Part = [number, string];
+/** 남은 초를 시각처럼 읽히지 않게 길이로 나눈다: 40초 · 18분 40초 · 1시간 5분 */
+function durationParts(sec: number): Part[] {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
-  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
+  if (h > 0) return m > 0 ? [[h, '시간'], [m, '분']] : [[h, '시간']];
+  if (m > 0) return [[m, '분'], [s, '초']];
+  return [[s, '초']];
+}
+export const countdown = (sec: number) => durationParts(sec).map(([n, u]) => `${n}${u}`).join(' ');
+
+/** 숫자는 크게, 단위는 작게. 읽으면 "18분 40초". */
+function Duration({ sec }: { sec: number }) {
+  return (
+    <span className="tick">
+      {durationParts(sec).map(([n, u], i) => (
+        <span key={u}>{i > 0 && ' '}{n}<small>{u}</small></span>
+      ))}
+    </span>
+  );
 }
 
 function Tile({ label, value, unit, sub, live }: {
@@ -107,7 +121,7 @@ function NextUpdate({ metrics }: { metrics: Metrics | null }) {
   return (
     <Tile
       label={label} live={false}
-      value={left === null ? DASH : <span className="tick">{countdown(left)}</span>}
+      value={left === null ? DASH : <Duration sec={left} />}
       sub={`${hhmm(next)}에 새 교통이 와요`}
     />
   );
