@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { FLOW_LEVELS, FLOW_PATTERN, addFlowImages, flowFrame, flowImageId, flowLevel, startFlow } from './flow.ts';
+import { FLOW_LEVELS, FLOW_PATTERN, addFlowImages, flowFrame, flowImageId, flowLevel, levelRgb, startFlow } from './flow.ts';
 
 let reduce = false;
 beforeEach(() => {
@@ -38,7 +38,8 @@ test('a flow frame is one short stroke and a long gap, as tall as the line', () 
   expect(f.data).toHaveLength(width * height * 4);
   // 획:틈 = 2:4 (선 두께의 배수), 획은 줄 전체 높이.
   expect(dash * 3).toBe(width);
-  expect(litColumns(f)).toEqual(range(0, dash));
+  // 맨 왼쪽 · 오른쪽 열은 늘 비운다(아래 테스트).
+  expect(litColumns(f)).toEqual(range(1, dash));
 });
 
 test('each step pushes the stroke forward along the line and wraps around', () => {
@@ -47,13 +48,13 @@ test('each step pushes the stroke forward along the line and wraps around', () =
   expect(litColumns(flowFrame(3, 1))).toEqual(range(shift, shift + dash));
   const last = flowFrame(3, steps - 1);
   const start = (steps - 1) * shift;
-  expect(litColumns(last)).toEqual([...range(0, start + dash - width), ...range(start, width)]);
+  expect(litColumns(last)).toEqual([...range(1, start + dash - width), ...range(start, width - 1)]);
 });
 
 test('the stroke colour follows the speed colour of each level (light jam · slow · flow)', () => {
   const rgb = (lv: number) => {
     const f = flowFrame(lv, 0);
-    const i = (Math.floor(f.height / 2) * f.width) * 4;
+    const i = (Math.floor(f.height / 2) * f.width + 4) * 4;
     return Array.from(f.data.subarray(i, i + 3));
   };
   expect(rgb(0)).toEqual([0xff, 0xc4, 0xc5]);
@@ -101,4 +102,42 @@ test('under reduced motion the flow never starts', () => {
   vi.advanceTimersByTime(2000);
   stop();
   expect(map.updateImage).not.toHaveBeenCalled();
+});
+
+test('the outer 1px ring of every frame is transparent (updateImage does not refresh the atlas padding copied from the first frame)', () => {
+  const { width, height, steps } = FLOW_PATTERN;
+  for (let step = 0; step < steps; step += 1) {
+    const f = flowFrame(4, step);
+    const alpha = (x: number, y: number) => f.data[(y * width + x) * 4 + 3];
+    for (let y = 0; y < height; y += 1) {
+      expect(alpha(0, y)).toBe(0);
+      expect(alpha(width - 1, y)).toBe(0);
+    }
+    for (let x = 0; x < width; x += 1) {
+      expect(alpha(x, 0)).toBe(0);
+      expect(alpha(x, height - 1)).toBe(0);
+    }
+  }
+});
+
+test('stroke colours come from each level\'s speed band, not its position in the list', () => {
+  const levels = [
+    { maxSpeed: 30, dashStepMs: 0 },
+    { maxSpeed: 60, dashStepMs: 300 },
+    { maxSpeed: Infinity, dashStepMs: 100 },
+  ];
+  // 30~60 은 40 을 넘나들지만 단계 시작(30)이 40 미만이라 정체색, 60~ 은 서행(60 < 70).
+  expect(levelRgb(0, levels)).toEqual([0xff, 0xc4, 0xc5]);
+  expect(levelRgb(1, levels)).toEqual([0xff, 0xc4, 0xc5]);
+  expect(levelRgb(2, levels)).toEqual([0xff, 0xe6, 0xae]);
+});
+
+test('a restarted loop draws its first frame even if the step number matches the old one', () => {
+  const map = fakeMap();
+  vi.advanceTimersByTime(16 * 70 * 10); // 단계 4 의 칸 번호가 0 이 되는 시각 근처
+  const stop = startFlow(map as never);
+  vi.advanceTimersByTime(20);
+  stop();
+  expect(callsFor(map, flowImageId(4))).toBeGreaterThan(0);
+  expect(callsFor(map, flowImageId(1))).toBeGreaterThan(0);
 });

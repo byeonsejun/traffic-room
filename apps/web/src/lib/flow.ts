@@ -39,32 +39,39 @@ export const flowLayerId = (set: SpeedSet, level: number) => `hw-${set}-flow-${l
  */
 export const FLOW_PATTERN = { width: 48, height: 8, dash: 16, steps: 16 } as const;
 
-// 단계별 획 색: 그 단계 속도선 색을 밝힌 빛줄기(정체 < 40 ≤ 서행 < 70 ≤ 원활).
-const LEVEL_RGB: Array<[number, number, number]> = [
-  [0xff, 0xc4, 0xc5],
-  [0xff, 0xc4, 0xc5],
-  [0xff, 0xe6, 0xae],
-  [0xc4, 0xf8, 0xdb],
-  [0xc4, 0xf8, 0xdb],
-];
+type Rgb = [number, number, number];
+// 획 색: 속도선 색을 밝힌 빛줄기. 경계는 속도선 색과 같다(정체 < 40 ≤ 서행 < 70 ≤ 원활).
+const JAM_LIGHT: Rgb = [0xff, 0xc4, 0xc5];
+const SLOW_LIGHT: Rgb = [0xff, 0xe6, 0xae];
+const FLOW_LIGHT: Rgb = [0xc4, 0xf8, 0xdb];
+
+/** level 단계의 획 색. 그 단계가 시작하는 속도로 정해서, 단계를 바꿔도 색 경계가 어긋나지 않는다. */
+export function levelRgb(level: number, levels: FlowLevel[] = FLOW_LEVELS): Rgb {
+  const from = level > 0 ? levels[level - 1]!.maxSpeed : 0;
+  return from < 40 ? JAM_LIGHT : from < 70 ? SLOW_LIGHT : FLOW_LIGHT;
+}
 
 export const flowImageId = (level: number) => `flow-${level}`;
 
 type Frame = { width: number; height: number; data: Uint8Array };
 const frames = new Map<string, Frame>();
 
-/** level 단계의 step 번째 프레임. 획이 선 진행 방향으로 step × (폭/steps) 만큼 나아가 있다. */
+/**
+ * level 단계의 step 번째 프레임. 획이 선 진행 방향으로 step × (폭/steps) 만큼 나아가 있다.
+ * 바깥 1px 테두리는 늘 비운다. 지도는 타일을 만들 때 이미지 둘레에 가장자리 픽셀을 1px 복사해 두는데,
+ * updateImage 는 안쪽만 다시 올리고 그 복사본은 첫 프레임 그대로 둬서, 비워 두지 않으면 이음매에 멈춘 조각이 비친다.
+ */
 export function flowFrame(level: number, step: number): Frame {
   const k = `${level}:${step}`;
   const hit = frames.get(k);
   if (hit) return hit;
   const { width, height, dash, steps } = FLOW_PATTERN;
-  const [r, g, b] = LEVEL_RGB[level] ?? LEVEL_RGB.at(-1)!;
+  const [r, g, b] = levelRgb(level);
   const start = ((step % steps) * width) / steps;
   const data = new Uint8Array(width * height * 4);
-  for (let x = 0; x < width; x += 1) {
+  for (let x = 1; x < width - 1; x += 1) {
     if ((x - start + width) % width >= dash) continue;
-    for (let y = 0; y < height; y += 1) data.set([r, g, b, 255], (y * width + x) * 4);
+    for (let y = 1; y < height - 1; y += 1) data.set([r, g, b, 255], (y * width + x) * 4);
   }
   const f = { width, height, data };
   frames.set(k, f);
@@ -88,7 +95,8 @@ export const prefersReducedMotion = () =>
  */
 export function startFlow(map: Pick<MlMap, 'updateImage' | 'triggerRepaint'>, levels: FlowLevel[] = FLOW_LEVELS): () => void {
   if (prefersReducedMotion()) return () => {};
-  const shown = levels.map(() => 0);
+  // 이미지는 멈출 때의 칸에 남아 있으니, 다시 시작하면 칸 번호와 상관없이 첫 칸을 꼭 올린다.
+  const shown = levels.map(() => -1);
   let stopped = false;
   let raf = 0;
   const tick = (now: number) => {

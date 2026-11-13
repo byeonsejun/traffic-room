@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { TILE_RETRY_DELAYS, retryFailedTiles } from './tile-retry.ts';
+import { TILE_RETRY_COOLDOWN_MS, TILE_RETRY_DELAYS, retryFailedTiles } from './tile-retry.ts';
 
 type Handler = (e: unknown) => void;
 const fakeMap = () => {
@@ -38,7 +38,7 @@ test('it backs off and gives up after the last delay, logging once', () => {
   retryFailedTiles(map as never);
   for (let i = 0; i <= TILE_RETRY_DELAYS.length; i += 1) {
     map.handlers.get('error')!(tileError(10, 1, 2));
-    vi.advanceTimersByTime(60_000);
+    vi.advanceTimersByTime(20_000);
   }
   expect(map.refreshTiles).toHaveBeenCalledTimes(TILE_RETRY_DELAYS.length);
   expect(log).toHaveBeenCalledTimes(1);
@@ -83,4 +83,39 @@ test('stop removes the listeners and cancels pending retries; a vanished source 
   retryFailedTiles(map2 as never);
   map2.handlers.get('error')!(tileError(10, 1, 2));
   expect(() => vi.advanceTimersByTime(60_000)).not.toThrow();
+});
+
+test('a tile that ran out of retries gets a fresh set after a cool-down', () => {
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  const map = fakeMap();
+  retryFailedTiles(map as never);
+  for (let i = 0; i <= TILE_RETRY_DELAYS.length; i += 1) {
+    map.handlers.get('error')!(tileError(10, 1, 2));
+    vi.advanceTimersByTime(20_000);
+  }
+  const used = map.refreshTiles.mock.calls.length;
+  vi.advanceTimersByTime(TILE_RETRY_COOLDOWN_MS);
+  // 식힌 뒤 한 번 더 스스로 부탁한다(아무도 그 타일을 다시 찾지 않아도 빈칸이 영영 남지 않게).
+  expect(map.refreshTiles.mock.calls.length).toBe(used + 1);
+  map.handlers.get('error')!(tileError(10, 1, 2));
+  vi.advanceTimersByTime(TILE_RETRY_DELAYS[0]!);
+  expect(map.refreshTiles.mock.calls.length).toBe(used + 2);
+});
+
+test('several errors for the same tile while a retry is pending schedule only one retry', () => {
+  const map = fakeMap();
+  retryFailedTiles(map as never);
+  map.handlers.get('error')!(tileError(12, 5, 6));
+  map.handlers.get('error')!(tileError(12, 5, 6));
+  vi.advanceTimersByTime(60_000);
+  expect(map.refreshTiles).toHaveBeenCalledTimes(1);
+});
+
+test('non-tile map errors are logged in full (message and stack), as MapLibre would have', () => {
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const map = fakeMap();
+  retryFailedTiles(map as never);
+  const err = new Error('The map has no image with that id');
+  map.handlers.get('error')!({ error: err });
+  expect(log.mock.calls[0]).toContain(err);
 });
