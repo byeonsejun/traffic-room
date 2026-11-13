@@ -25,6 +25,10 @@ const HW_PATH = '/highways.json';
 const PULSE_MS = 1400 * 3;
 // 지금 보는 CCTV 핀이 새 자리로 미끄러지는 시간. 지도 이동(800ms)과 비슷하게 맞춘다.
 const PIN_GLIDE_MS = 700;
+// 핀 툴팁: 핀 테두리에서 이만큼 바깥까지는 핀 위로 본다(10px 점을 손으로 맞추기 어렵지 않게).
+const PIN_HIT_PAD = 6;
+// 툴팁이 지도 가장자리에서 띄울 최소 간격.
+const TIP_EDGE = 8;
 const NO_CCTVS: Cctv[] = [];
 const WORKER_PATH = '/maplibre-gl-worker.mjs'; // scripts/copy-maplibre-worker.mjs 가 dev · build 전에 복사한다.
 
@@ -137,6 +141,7 @@ type LivePin = {
   marker: Marker;
   el: HTMLElement;
   label: HTMLElement;
+  tip: HTMLElement;
   at: [number, number];
   frame: number;
 };
@@ -149,27 +154,112 @@ function createLivePin(ml: typeof import('maplibre-gl'), map: MlMap, at: [number
   const el = document.createElement('div');
   el.className = 'live-pin';
   // 보여 주기만 하는 표시다. CCTV 이름은 패널에 있으니 스크린 리더와 포인터 모두 지나치게 한다(CSS 도 pointer-events: none).
+  // 마우스용 이름 툴팁도 이 안에 둬서 함께 가려진다. 툴팁은 지도 mousemove 로 켠다(watchPinHover).
   el.setAttribute('aria-hidden', 'true');
+  const tip = document.createElement('span');
+  tip.className = 'live-pin__tip';
   const label = document.createElement('span');
   label.className = 'live-pin__label';
   const tail = document.createElement('span');
   tail.className = 'live-pin__tail';
   const dot = document.createElement('span');
   dot.className = 'live-pin__dot';
-  el.append(label, tail, dot);
+  el.append(tip, label, tail, dot);
   const marker = new ml.Marker({ element: el, anchor: 'bottom' }).setLngLat(at).addTo(map);
-  return { marker, el, label, at, frame: 0 };
+  return { marker, el, label, tip, at, frame: 0 };
+}
+
+const inside = (r: DOMRect, x: number, y: number, pad: number) =>
+  x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad;
+
+/** 툴팁을 켜며 자리를 잡는다. 위에 8px 여백을 못 지키면 핀 아래로(아래도 자리가 없으면 위 그대로), 옆으로 넘치면 안쪽으로 민다. */
+function placeTip(pin: LivePin, box: DOMRect) {
+  const { el, tip } = pin;
+  tip.style.setProperty('--tip-dx', '0px');
+  el.classList.remove('is-below');
+  el.classList.add('is-hover');
+  const pr = el.getBoundingClientRect();
+  const tr = tip.getBoundingClientRect();
+  // 아래에 둘 때의 위치: 점 아래 10px(CSS top: calc(100% + 10px)).
+  const roomBelow = pr.bottom + 10 + tr.height <= box.bottom - TIP_EDGE;
+  el.classList.toggle('is-below', tr.top < box.top + TIP_EDGE && roomBelow);
+  let dx = 0;
+  if (tr.left < box.left + TIP_EDGE) dx = box.left + TIP_EDGE - tr.left;
+  else if (tr.right > box.right - TIP_EDGE) dx = box.right - TIP_EDGE - tr.right;
+  tip.style.setProperty('--tip-dx', `${Math.round(dx)}px`);
+}
+
+type PinHover = {
+  /** 핀이 움직이거나 숨거나 다시 보일 때 마지막 마우스 좌표로 다시 판정한다. remeasure 면 켜져 있어도 자리를 다시 잡는다. */
+  recheck: (remeasure?: boolean) => void;
+  stop: () => void;
+};
+
+/**
+ * 핀은 포인터를 지나보내므로(끌기 · 돌발 점 누르기를 막지 않게) 핀 위인지는 지도 mousemove 좌표로 직접 판정한다.
+ * 마우스가 멈춰 있어도 지도가 움직이면('move') 마지막 좌표로 다시 보고, 핀이 미끄러지거나 숨는 건 recheck 로 알려 받는다.
+ * 판정은 핀 요소 하나의 getBoundingClientRect 라 이벤트마다 해도 가볍고, 실제 크기라 알약 글자가 바뀌어도 맞다.
+ * 터치는 탭 뒤에 마우스 이벤트를 흉내 내는데 mouseout 이 오지 않아 툴팁이 남으므로, 마우스 포인터일 때만 켠다.
+ */
+function watchPinHover(map: MlMap, getPin: () => LivePin | null): PinHover {
+  let last: { x: number; y: number } | null = null;
+  let on = false;
+  let mouse = true;
+  const hide = () => {
+    on = false;
+    getPin()?.el.classList.remove('is-hover', 'is-below');
+  };
+  const check = (remeasure = false) => {
+    const pin = getPin();
+    if (!last || !mouse || !pin || pin.el.hidden) return hide();
+    if (!inside(pin.el.getBoundingClientRect(), last.x, last.y, PIN_HIT_PAD)) return hide();
+    // 켜져 있으면 다시 재지 않는다. 툴팁은 핀 안에 있어 같이 움직인다.
+    if (on && !remeasure) return;
+    on = true;
+    placeTip(pin, map.getContainer().getBoundingClientRect());
+  };
+  const onMove = (e: { originalEvent: MouseEvent }) => {
+    last = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+    check();
+  };
+  const onMapMove = () => check();
+  const onOut = () => {
+    last = null;
+    hide();
+  };
+  // 포인터 이벤트가 흉내 낸 마우스 이벤트보다 먼저 오므로 여기서 입력 종류를 기억해 둔다.
+  const onPointer = (e: PointerEvent) => {
+    mouse = e.pointerType === 'mouse' || e.pointerType === 'pen';
+    if (!mouse) hide();
+  };
+  const box = map.getContainer();
+  box.addEventListener('pointerdown', onPointer);
+  box.addEventListener('pointermove', onPointer);
+  map.on('mousemove', onMove);
+  map.on('move', onMapMove);
+  map.on('mouseout', onOut);
+  return {
+    recheck: (remeasure) => check(remeasure),
+    stop: () => {
+      box.removeEventListener('pointerdown', onPointer);
+      box.removeEventListener('pointermove', onPointer);
+      map.off('mousemove', onMove);
+      map.off('move', onMapMove);
+      map.off('mouseout', onOut);
+    },
+  };
 }
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
 /** 핀을 새 자리로 옮긴다. reduced motion 이면 바로, 아니면 잠깐 미끄러지듯. */
-function moveLivePin(pin: LivePin, to: [number, number]) {
+function moveLivePin(pin: LivePin, to: [number, number], onStep: () => void) {
   cancelAnimationFrame(pin.frame);
   const from = pin.at;
   if (prefersReducedMotion() || (from[0] === to[0] && from[1] === to[1])) {
     pin.at = to;
     pin.marker.setLngLat(to);
+    onStep();
     return;
   }
   const start = performance.now();
@@ -178,6 +268,7 @@ function moveLivePin(pin: LivePin, to: [number, number]) {
     const k = easeInOut(t);
     pin.at = t === 1 ? to : [from[0] + (to[0] - from[0]) * k, from[1] + (to[1] - from[1]) * k];
     pin.marker.setLngLat(pin.at);
+    onStep();
     if (t < 1) pin.frame = requestAnimationFrame(step);
   };
   pin.frame = requestAnimationFrame(step);
@@ -206,6 +297,7 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
   const markers = useRef(new Set<Marker>());
   const pulsed = useRef(new Set<number>());
   const livePin = useRef<LivePin | null>(null);
+  const pinHover = useRef<PinHover | null>(null);
   // 지도 load 때 넣을 최신 목록. 렌더 중이 아니라 커밋 뒤에 갱신한다.
   const latest = useRef(incidents);
   useEffect(() => {
@@ -413,8 +505,10 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
     const ml = mlRef.current;
     if (!ready || !map || !ml) return;
     const pin = livePin.current;
+    const recheck = () => pinHover.current?.recheck();
     if (camLon === undefined || camLat === undefined) {
       if (pin) pin.el.hidden = true;
+      recheck();
       return;
     }
     const to: [number, number] = [camLon, camLat];
@@ -425,10 +519,23 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
       cancelAnimationFrame(pin.frame);
       pin.at = to;
       pin.marker.setLngLat(to);
+      recheck();
     } else {
-      moveLivePin(pin, to);
+      moveLivePin(pin, to, recheck);
     }
   }, [ready, camLon, camLat]);
+
+  // 핀 위에 마우스를 올리면 CCTV 이름 툴팁.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    const hover = watchPinHover(map, () => livePin.current);
+    pinHover.current = hover;
+    return () => {
+      hover.stop();
+      pinHover.current = null;
+    };
+  }, [ready]);
 
   // 보는 중에 동작 줄이기 설정을 바꾸면 핀 맥박도 바로 따라 켜고 끈다.
   const [still, setStill] = useState(false);
@@ -443,14 +550,18 @@ export function MapView({ cctvs = NO_CCTVS, speeds, trafficDataAt, trafficError 
 
   // 패널이 이 CCTV 를 틀지 못하면 핀도 회색으로 바꾸고 "실시간"이라 하지 않는다.
   const hasCam = !!cctv;
+  const camName = cctv?.name ?? '';
   const down = !!cctv && cctvUnavailable === cctv.id;
   useEffect(() => {
     const pin = livePin.current;
     if (!ready || !pin || !hasCam) return;
     pin.label.textContent = down ? '연결 안 됨' : '실시간';
+    pin.tip.textContent = camName;
     pin.el.classList.toggle('is-down', down);
     pin.el.classList.toggle('is-pulsing', !down && !still);
-  }, [ready, hasCam, camLon, camLat, down, still]);
+    // 이름 · 알약 글자가 바뀌면 툴팁 폭도 바뀌니 켜져 있으면 자리를 다시 잡는다.
+    pinHover.current?.recheck(true);
+  }, [ready, hasCam, camLon, camLat, camName, down, still]);
 
   useEffect(() => {
     const top = feed[0];

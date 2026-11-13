@@ -52,6 +52,9 @@ const h = vi.hoisted(() => {
     getCanvas() {
       return document.createElement('canvas');
     }
+    getContainer() {
+      return this.options.container as HTMLElement;
+    }
     remove() {}
   }
   class Marker {
@@ -351,7 +354,7 @@ test('one live pin sits on the active CCTV, anchored at its bottom', async () =>
   expect(pins[0]!.options.anchor).toBe('bottom');
   expect(pins[0]!.lngLats.at(-1)).toEqual([127.0, 37.48]);
   const el = pins[0]!.element;
-  expect(el.textContent).toBe('실시간');
+  expect(el.querySelector('.live-pin__label')!.textContent).toBe('실시간');
   expect(el.getAttribute('aria-hidden')).toBe('true');
   expect(el.hasAttribute('role')).toBe(false);
   expect(el.hasAttribute('aria-label')).toBe(false);
@@ -396,12 +399,12 @@ test('when the panel cannot play the active CCTV the pin turns grey and stops sa
   const el = livePins()[0]!.element;
   act(() => useConsole.getState().setCctvUnavailable('seocho'));
   expect(el.classList.contains('is-down')).toBe(true);
-  expect(el.textContent).toBe('연결 안 됨');
+  expect(el.querySelector('.live-pin__label')!.textContent).toBe('연결 안 됨');
   expect(el.classList.contains('is-pulsing')).toBe(false);
   // 다른 CCTV 가 못 나오는 건 이 핀과 상관없다.
   act(() => useConsole.getState().setCctvUnavailable('near1'));
   expect(el.classList.contains('is-down')).toBe(false);
-  expect(el.textContent).toBe('실시간');
+  expect(el.querySelector('.live-pin__label')!.textContent).toBe('실시간');
 });
 
 test('the live pin pulses, but not under reduced motion', async () => {
@@ -443,4 +446,184 @@ test('unmounting mid-glide cancels the pending frame', async () => {
   cancel.mockClear();
   view.unmount();
   expect(cancel).toHaveBeenCalledWith(4242);
+});
+
+// 핀 위에 마우스를 올리면 CCTV 이름 툴팁. 핀은 pointer-events: none 이라 지도 mousemove 로 판정한다.
+const rect = (left: number, top: number, width: number, height: number) =>
+  ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+/** 지도 상자(0,0)~(800,600) 안, 핀은 (400,300) 근처에 알약 · 꼬리 · 점이 세로로 선 모양(가로 50 · 세로 34). */
+function placePin(map: InstanceType<typeof h.FakeMap>, pinRect = rect(375, 266, 50, 34)) {
+  vi.spyOn(map.getContainer(), 'getBoundingClientRect').mockReturnValue(rect(0, 0, 800, 600));
+  const el = livePins()[0]!.element;
+  const spy = vi.spyOn(el, 'getBoundingClientRect').mockReturnValue(pinRect);
+  const tip = el.querySelector<HTMLElement>('.live-pin__tip')!;
+  vi.spyOn(tip, 'getBoundingClientRect').mockImplementation(() => {
+    const r = spy.getMockImplementation()?.() ?? pinRect;
+    const w = 160;
+    return rect(r.left + r.width / 2 - w / 2, r.top - 34, w, 28);
+  });
+  return { el, tip, move: (r: DOMRect) => spy.mockReturnValue(r) };
+}
+const hover = (map: InstanceType<typeof h.FakeMap>, x: number, y: number) =>
+  act(() => map.handlers.get('mousemove')!({ originalEvent: { clientX: x, clientY: y }, point: { x, y } }));
+
+test('hovering the live pin shows the CCTV name; moving off hides it', async () => {
+  const { map } = await mountLoaded(withCams);
+  const { el, tip } = placePin(map);
+  expect(el.classList.contains('is-hover')).toBe(false);
+  expect(tip.textContent).toBe('[경부선] 서초');
+  hover(map, 400, 297); // 점 위
+  expect(el.classList.contains('is-hover')).toBe(true);
+  hover(map, 400, 270); // 알약 위
+  expect(el.classList.contains('is-hover')).toBe(true);
+  hover(map, 470, 297); // 핀 옆 빈 지도
+  expect(el.classList.contains('is-hover')).toBe(false);
+});
+
+test('the tooltip stays out of the accessibility tree and does not take the pointer', async () => {
+  const { map } = await mountLoaded(withCams);
+  const { el, tip } = placePin(map);
+  hover(map, 400, 297);
+  // 패널이 이미 이름을 읽으므로 핀 전체(툴팁 포함)는 aria-hidden 그대로, 역할도 없다.
+  expect(el.getAttribute('aria-hidden')).toBe('true');
+  expect(el.contains(tip)).toBe(true);
+  expect(tip.hasAttribute('role')).toBe(false);
+  expect(el.hasAttribute('tabindex')).toBe(false);
+  // 지도 쪽 커서도 건드리지 않는다(누를 수 있는 것처럼 보이지 않게).
+  expect(map.handlers.has('click:live-pin')).toBe(false);
+});
+
+test('a grey "연결 안 됨" pin still shows the name on hover', async () => {
+  const { map } = await mountLoaded(withCams);
+  const { el, tip } = placePin(map);
+  act(() => useConsole.getState().setCctvUnavailable('seocho'));
+  hover(map, 400, 297);
+  expect(el.classList.contains('is-down')).toBe(true);
+  expect(el.classList.contains('is-hover')).toBe(true);
+  expect(tip.textContent).toBe('[경부선] 서초');
+});
+
+test('the tooltip name follows the active CCTV', async () => {
+  reduce = true;
+  useConsole.setState({ incidents: { a: inc('a', 'accident', 127.171, 36.79) } });
+  await mountLoaded(withCams);
+  const tip = livePins()[0]!.element.querySelector('.live-pin__tip')!;
+  act(() => useConsole.getState().select('a'));
+  expect(tip.textContent).toBe('[경부선] 천안');
+  act(() => useConsole.getState().setCctv('near2'));
+  expect(tip.textContent).toBe('[경부선] 안성');
+});
+
+test('leaving the map hides the tooltip', async () => {
+  const { map } = await mountLoaded(withCams);
+  const { el } = placePin(map);
+  hover(map, 400, 297);
+  act(() => map.handlers.get('mouseout')!({}));
+  expect(el.classList.contains('is-hover')).toBe(false);
+});
+
+test('when the map moves under a still mouse the hover is checked again', async () => {
+  const { map } = await mountLoaded(withCams);
+  const { el, move } = placePin(map);
+  hover(map, 400, 297);
+  move(rect(575, 266, 50, 34)); // 지도를 끌어 핀이 오른쪽으로 갔다
+  act(() => map.handlers.get('move')!({}));
+  expect(el.classList.contains('is-hover')).toBe(false);
+  move(rect(375, 266, 50, 34));
+  act(() => map.handlers.get('move')!({}));
+  expect(el.classList.contains('is-hover')).toBe(true);
+});
+
+test('a hidden pin (no active CCTV) never shows a tooltip', async () => {
+  const { map, view } = await mountLoaded(withCams);
+  const { el } = placePin(map);
+  view.rerender(<MapView {...noTraffic} cctvs={[]} />);
+  expect(el.hidden).toBe(true);
+  hover(map, 400, 297);
+  expect(el.classList.contains('is-hover')).toBe(false);
+});
+
+test('near the top edge the tooltip flips below the pin; near a side it is nudged inside', async () => {
+  const { map } = await mountLoaded(withCams);
+  const { el, tip, move } = placePin(map, rect(375, 10, 50, 34));
+  hover(map, 400, 40);
+  expect(el.classList.contains('is-below')).toBe(true);
+  hover(map, 470, 40);
+  move(rect(5, 266, 50, 34)); // 왼쪽 끝: 160px 툴팁이 가운데 정렬이면 상자 밖(-50)으로 나간다
+  hover(map, 30, 297);
+  expect(el.classList.contains('is-below')).toBe(false);
+  expect(tip.style.getPropertyValue('--tip-dx')).toBe('58px');
+});
+
+test('a pin gliding away under a still mouse drops the tooltip', async () => {
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+  let now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  useConsole.setState({ incidents: { a: inc('a', 'accident', 127.171, 36.79) } });
+  const { map } = await mountLoaded(withCams);
+  const { el, move } = placePin(map);
+  hover(map, 400, 297);
+  expect(el.classList.contains('is-hover')).toBe(true);
+  act(() => useConsole.getState().select('a'));
+  move(rect(575, 266, 50, 34));
+  now = 5_000;
+  act(() => frames.shift()!(now));
+  expect(el.classList.contains('is-hover')).toBe(false);
+});
+
+test('hiding the pin drops the tooltip, and a re-shown pin does not come back hovered', async () => {
+  const { map, view } = await mountLoaded(withCams);
+  const { el } = placePin(map);
+  hover(map, 400, 297);
+  view.rerender(<MapView {...noTraffic} cctvs={[]} />);
+  expect(el.classList.contains('is-hover')).toBe(false);
+  hover(map, 700, 500); // 숨은 동안 마우스가 다른 데로 갔다
+  view.rerender(<MapView {...withCams} />);
+  expect(el.hidden).toBe(false);
+  expect(el.classList.contains('is-hover')).toBe(false);
+});
+
+test('a name change while hovering re-measures the tooltip position', async () => {
+  reduce = true;
+  useConsole.setState({ incidents: { a: inc('a', 'accident', 127.171, 36.79) } });
+  const { map } = await mountLoaded(withCams);
+  act(() => useConsole.getState().select('a'));
+  const { tip } = placePin(map, rect(5, 266, 50, 34));
+  hover(map, 30, 297);
+  expect(tip.style.getPropertyValue('--tip-dx')).toBe('58px');
+  vi.spyOn(tip, 'getBoundingClientRect').mockReturnValue(rect(30 - 120, 232, 240, 28));
+  act(() => useConsole.getState().setCctv('near2'));
+  expect(tip.style.getPropertyValue('--tip-dx')).toBe('98px');
+});
+
+test('the tooltip flips only when it would really cross the top margin, and not if below has no room either', async () => {
+  const { map } = await mountLoaded(withCams);
+  // 툴팁 위 끝이 상자 위에서 9px: 8px 여백 안쪽이 아니므로 위에 둔다.
+  const { el, tip, move } = placePin(map, rect(375, 43, 50, 34));
+  hover(map, 400, 70);
+  expect(el.classList.contains('is-below')).toBe(false);
+  hover(map, 700, 500);
+  // 아주 낮은 지도: 위도 아래도 자리가 없으면 위에 둔다.
+  vi.spyOn(map.getContainer(), 'getBoundingClientRect').mockReturnValue(rect(0, 0, 800, 60));
+  move(rect(375, 10, 50, 34));
+  void tip;
+  hover(map, 400, 40);
+  expect(el.classList.contains('is-below')).toBe(false);
+});
+
+test('touch taps do not open the tooltip', async () => {
+  const { map } = await mountLoaded(withCams);
+  const { el } = placePin(map);
+  const box = map.getContainer();
+  const pe = new Event('pointerdown') as Event & { pointerType: string };
+  pe.pointerType = 'touch';
+  act(() => { box.dispatchEvent(pe); });
+  hover(map, 400, 297);
+  expect(el.classList.contains('is-hover')).toBe(false);
+  const pm = new Event('pointermove') as Event & { pointerType: string };
+  pm.pointerType = 'mouse';
+  act(() => { box.dispatchEvent(pm); });
+  hover(map, 400, 297);
+  expect(el.classList.contains('is-hover')).toBe(true);
 });

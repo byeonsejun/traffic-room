@@ -302,12 +302,33 @@ button.ev[aria-pressed='true'] { background: #1a2a3e; }
   from { transform: scale(1); opacity: 0.7; }
   to { transform: scale(3.2); opacity: 0; }
 }
+/* 핀 위에 마우스를 올리면 뜨는 CCTV 이름. 핀처럼 포인터를 지나보내고, 켜고 끄는 건 MapView 의 watchPinHover. */
+.live-pin__tip {
+  position: absolute; left: 50%; bottom: calc(100% + 6px);
+  transform: translateX(calc(-50% + var(--tip-dx, 0px)));
+  max-width: 260px; padding: 6px 10px 7px; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.55);
+  font-family: var(--font-plex), "IBM Plex Sans KR", system-ui, sans-serif;
+  font-size: 13px; font-weight: 500; line-height: 18px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none; visibility: hidden; opacity: 0;
+  transition: opacity 0.12s, visibility 0s linear 0.12s;
+}
+.live-pin__tip::before {
+  content: '지금 보는 CCTV'; display: block;
+  font-size: 11px; font-weight: 400; line-height: 15px; color: var(--mute);
+}
+.live-pin.is-hover .live-pin__tip { visibility: visible; opacity: 1; transition: opacity 0.12s; }
+/* 지도 위쪽 가장자리라 위에 둘 자리가 없으면 점 아래로. */
+.live-pin.is-below .live-pin__tip { bottom: auto; top: calc(100% + 10px); }
 .live-pin.is-down { --pin: var(--mute); }
 .live-pin.is-down .live-pin__label { background: #263445; color: var(--ink); }
 .live-pin.is-down .live-pin__dot { border-color: #9AA7B6; box-shadow: 0 0 0 1px var(--asphalt); }
 @media (prefers-reduced-motion: reduce) {
   .live-pin .live-pin__dot::after { animation: none; display: none; }
-  .live-pin__label, .live-pin__tail, .live-pin__dot { transition: none; }
+  .live-pin__label, .live-pin__tail, .live-pin__dot, .live-pin__tip { transition: none; }
+  .live-pin.is-hover .live-pin__tip { transition: none; }
 }
 
 /* CCTV panel */
