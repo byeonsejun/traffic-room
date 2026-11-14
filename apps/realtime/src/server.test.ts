@@ -3,7 +3,7 @@ import type { WebSocket } from '@fastify/websocket';
 import { createTestDb } from '@traffic-room/db/test-db';
 import { applyIncidentPlan, getCctv, recordRun, upsertCctvs, type Db } from '@traffic-room/db';
 import type { ItsClient } from '@traffic-room/its';
-import { parseServerMessage, readTiming, type Cctv, type Incident, type LogEvent, type ServerMessage } from '@traffic-room/shared';
+import { RESUME_LIMIT, parseServerMessage, readTiming, type Cctv, type Incident, type LogEvent, type ServerMessage } from '@traffic-room/shared';
 import type { FastifyInstance } from 'fastify';
 import { buildServer } from './server.ts';
 import { createHub } from './hub.ts';
@@ -117,7 +117,7 @@ describe('websocket', () => {
     expect(hello).toMatchObject({ id: 0, type: 'hello', payload: { delayMinutes: 60, latestId: 3 } });
   });
 
-  test('resume returns missed events after lastId in order, max 200', async () => {
+  test('resume returns missed events after lastId in order, at most RESUME_LIMIT', async () => {
     const { app, db } = await setup();
     await seedThreeEvents(db);
     const c = await connect(app);
@@ -130,12 +130,12 @@ describe('websocket', () => {
     expect(m3).toMatchObject({ type: 'incident.arrived', payload: { incident: { key: 'c' } } });
   });
 
-  test('resume answers at most 200 events', async () => {
+  test('resume answers at most RESUME_LIMIT events', async () => {
     const { app, db } = await setup();
     const base = NOW.getTime() - 5 * 60 * 60_000;
     await applyIncidentPlan(db, {
       quiet: [], seen: [], cleared: [],
-      arriving: Array.from({ length: 250 }, (_, i) => ({ incident: inc(`k${i}`), emitAt: new Date(base + i * 1000) })),
+      arriving: Array.from({ length: RESUME_LIMIT + 50 }, (_, i) => ({ incident: inc(`k${i}`), emitAt: new Date(base + i * 1000) })),
     }, new Date(base - 60 * 60_000));
     const c = await connect(app);
     await c.next(); // hello
@@ -147,9 +147,9 @@ describe('websocket', () => {
       if (m.type === 'pong') break;
       ids.push(m.id);
     }
-    expect(ids).toHaveLength(200);
+    expect(ids).toHaveLength(RESUME_LIMIT);
     expect(ids[0]).toBe(1);
-    expect(ids.at(-1)).toBe(200);
+    expect(ids.at(-1)).toBe(RESUME_LIMIT);
   });
 
   test('lastId in the url is resumed before any broadcast, without a resume message', async () => {

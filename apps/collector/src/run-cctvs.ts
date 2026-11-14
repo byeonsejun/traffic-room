@@ -1,6 +1,7 @@
 import { canCall, recordRun, upsertCctvs } from '@traffic-room/db';
 import type { Cctv } from '@traffic-room/shared';
-import { depsFromEnv, errorCode } from './env.ts';
+import { errorCode } from '@traffic-room/shared';
+import { depsFromEnv } from './env.ts';
 import type { RunDeps } from './run-events.ts';
 
 export interface CctvsResult { status: 'ok' | 'skipped-budget' | 'failed'; count: number; code?: string }

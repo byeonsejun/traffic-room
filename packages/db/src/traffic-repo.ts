@@ -1,5 +1,6 @@
 import type { Category, TrafficSummary } from '@traffic-room/shared';
 import type { Db } from './db.ts';
+import { iso, toDate } from './dates.ts';
 
 export type NewTrafficSnapshot = {
   dataAt: Date;
@@ -19,8 +20,6 @@ export type Insights = {
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-const iso = (d: Date) => d.toISOString();
-const toDate = (v: unknown) => (v instanceof Date ? v : new Date(v as string));
 const emptyCategories = (): ByCategory => ({
   accident: 0, breakdown: 0, weather: 0, construction: 0, report: 0, other: 0,
 });

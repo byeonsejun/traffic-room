@@ -4,12 +4,9 @@ import { readDbf } from './dbf.ts';
 import { readShpLines } from './shp.ts';
 import { simplify } from './simplify.ts';
 import { tmToLonLat } from './tm.ts';
+import type { HighwaysFile } from './types.ts';
 
-export type HighwaysFile = {
-  source: string;
-  routes: string[];
-  links: [linkId: string, routeIndex: number, lengthM: number, coords: [number, number][]][];
-};
+export type { HighwaysFile };
 
 const TOLERANCE_M = 8;
 

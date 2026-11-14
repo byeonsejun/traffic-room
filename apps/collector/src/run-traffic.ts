@@ -1,6 +1,7 @@
 import { canCall, latestTrafficSnapshot, pruneTraffic, recordRun, saveTrafficSnapshot } from '@traffic-room/db';
 import type { HighwaysIndex } from '@traffic-room/highways';
-import { depsFromEnv, errorCode, highwaysFromRepo } from './env.ts';
+import { errorCode } from '@traffic-room/shared';
+import { depsFromEnv, highwaysFromRepo } from './env.ts';
 import type { RunDeps } from './run-events.ts';
 import { pickHighways, summarize, validateTraffic } from './traffic.ts';
 

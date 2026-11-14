@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Insights } from '@traffic-room/db';
+import type { InsightsResponse } from '@/lib/api';
 import { load } from '@/lib/load';
 import { useKnownInterval } from './useFallbackTick';
 
-export type TrafficBucket = Insights['buckets'][number];
-type InsightsResponse = Insights & { delayMinutes: number; intervalMinutes: number };
 export type InsightsData = Insights & {
   intervalMinutes: number;
   delayMinutes: number;

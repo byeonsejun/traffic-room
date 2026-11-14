@@ -1,7 +1,8 @@
 import type { Timing } from '@traffic-room/shared';
 import { applyIncidentPlan, canCall, getActiveKeys, lastCollectedAt, pruneHistory, recordRun, type Db } from '@traffic-room/db';
 import type { ItsClient } from '@traffic-room/its';
-import { depsFromEnv, errorCode } from './env.ts';
+import { errorCode } from '@traffic-room/shared';
+import { depsFromEnv } from './env.ts';
 import { planIncidentChanges } from './plan.ts';
 
 export interface RunDeps { db: Db; its: ItsClient; now: () => Date; timing: Timing }

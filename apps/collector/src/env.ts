@@ -28,8 +28,3 @@ export function highwaysFromRepo() {
   return loadHighways(fileURLToPath(new URL('../../web/public/highways.json', import.meta.url)));
 }
 
-export function errorCode(e: unknown): string {
-  const code = (e as { code?: unknown } | null)?.code;
-  if (typeof code === 'string') return code;
-  return e instanceof Error ? e.name : 'unknown';
-}

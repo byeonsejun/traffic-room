@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyWebsocket from '@fastify/websocket';
 import { getCctv, getEventsAfter, latestEmittedId, type Db } from '@traffic-room/db';
 import type { ItsClient } from '@traffic-room/its';
-import { parseClientMessage, type ClientMessage, type ServerMessage, type Timing } from '@traffic-room/shared';
+import { RESUME_LIMIT, errorCode, parseClientMessage, type ClientMessage, type ServerMessage, type Timing } from '@traffic-room/shared';
 import { createHub, toIncidentMessage, type Hub } from './hub.ts';
 import { createDailyQuota, refreshCctv, type CctvUrlResult, type DailyQuota } from './cctv-refresh.ts';
 import type { MetricsState } from './metrics.ts';
@@ -29,7 +29,6 @@ export interface ServerDeps {
   metrics?: MetricsState;
 }
 
-const RESUME_LIMIT = 200;
 const DAILY_REFRESH_LIMIT = 10;
 const IDLE_CLOSE_CODE = 4000;
 const POLICY_VIOLATION = 1008;
@@ -40,13 +39,6 @@ function parseLastId(query: unknown): number | null {
   if (typeof raw !== 'string' || !/^\d+$/.test(raw)) return null;
   const n = Number(raw);
   return Number.isSafeInteger(n) ? n : null;
-}
-
-/** 에러 문구에는 접속 정보가 섞일 수 있어 code 나 이름만 남긴다. */
-function errorCode(e: unknown): string {
-  const code = (e as { code?: unknown } | null)?.code;
-  if (typeof code === 'string') return code;
-  return e instanceof Error ? e.name : 'unknown';
 }
 
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {

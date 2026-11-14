@@ -1,17 +1,10 @@
 'use client';
 
-import { useSyncExternalStore, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { Metrics } from '@traffic-room/shared';
 import { yesterdayDelta, type TrafficBucket } from '@/lib/insights';
 import { hhmm } from '@/lib/time';
-
-const subscribeSeconds = (onChange: () => void) => {
-  const t = setInterval(onChange, 1000);
-  return () => clearInterval(t);
-};
-const currentSecond = () => Math.floor(Date.now() / 1000);
-// 서버 렌더와 첫 하이드레이션에서는 남은 시간을 비워 두어 어긋남이 없게 한다.
-const noSecond = () => null;
+import { useSeconds } from '../useSeconds';
 
 const fmt = (n: number) => Math.round(n).toLocaleString('ko-KR');
 
@@ -108,7 +101,7 @@ export function KpiTiles({ metrics, buckets, intervalMinutes }: {
 
 /** 다음 교통 갱신까지 남은 시간. 1초마다 줄고, 예정 시각이 지나면 새 교통을 기다리는 중이라고 말한다. */
 function NextUpdate({ metrics }: { metrics: Metrics | null }) {
-  const sec = useSyncExternalStore(subscribeSeconds, currentSecond, noSecond);
+  const sec = useSeconds();
   const label = '다음 교통 갱신까지';
   const next = metrics?.nextTrafficAt ?? null;
   if (!next) {

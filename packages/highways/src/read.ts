@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { HighwaysFile } from './build.ts';
+import type { HighwaysFile } from './types.ts';
 
 export type HighwaysIndex = {
   size: number;

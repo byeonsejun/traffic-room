@@ -45,6 +45,12 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('cctv.request'), cctvId: z.string(), refresh: z.boolean() }),
 ]);
 
+/**
+ * 재접속 따라잡기(`/ws?lastId=`) 한 번에 서버가 돌려주는 최대 건수. 서버는 이만큼만 돌려주고,
+ * 클라이언트는 이보다 많이 밀렸으면 따라잡기 대신 스냅샷부터 다시 받는다. 두 쪽이 같은 값을 봐야 해서 여기 둔다.
+ */
+export const RESUME_LIMIT = 200;
+
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 

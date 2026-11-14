@@ -1,15 +1,9 @@
 import { create } from 'zustand';
-import type { Incident, ServerMessage } from '@traffic-room/shared';
+import { RESUME_LIMIT, type Incident, type ServerMessage } from '@traffic-room/shared';
+import type { Snapshot } from '@/lib/api';
 import type { ConnStatus } from '@/lib/realtime-client';
 
 export type { ConnStatus };
-
-export type Snapshot = {
-  incidents: Incident[];
-  latestId: number;
-  collectedAt: string | null;
-  delayMinutes: number;
-};
 
 export type FeedItem = {
   id: number;
@@ -20,12 +14,10 @@ export type FeedItem = {
 };
 
 const FEED_MAX = 30;
-/** 서버가 resume 한 번에 돌려주는 최대 건수(apps/realtime 의 RESUME_LIMIT 와 같다). */
-export const RESUME_LIMIT = 200;
 
 /**
  * hello 의 latestId 로 보아 resume 만으로는 따라잡을 수 없으면 true.
- * 200건 넘게 밀렸거나, 서버 로그가 우리 lastId 보다 뒤에 있으면(초기화 등) 스냅샷부터 다시 받는다.
+ * RESUME_LIMIT 건보다 많이 밀렸거나, 서버 로그가 우리 lastId 보다 뒤에 있으면(초기화 등) 스냅샷부터 다시 받는다.
  */
 export function needsResync(lastId: number, latestId: number): boolean {
   return latestId - lastId > RESUME_LIMIT || latestId < lastId;

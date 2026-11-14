@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import type { TrafficResponse } from '@/lib/api';
 import { load } from '@/lib/load';
 
-type TrafficResponse =
-  | { id: number; dataAt: string; speeds: [string, number][] }
-  | { id: null };
 export type Traffic = { speeds: Map<string, number> | null; dataAt: string | null; error: boolean };
 const NO_TRAFFIC: Traffic = { speeds: null, dataAt: null, error: false };
 /** 새 스냅샷을 받으러 갔는데 실패했거나 아직 예전 것이 오면 이만큼 쉬었다가 다시 간다. */

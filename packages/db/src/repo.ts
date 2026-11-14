@@ -1,5 +1,6 @@
 import type { Cctv, Incident, LogEvent } from '@traffic-room/shared';
 import type { Db, Statement } from './db.ts';
+import { iso, toDate, toIso } from './dates.ts';
 
 export type Service = 'events' | 'cctv' | 'traffic';
 export type IncidentPlan = {
@@ -8,10 +9,6 @@ export type IncidentPlan = {
   seen: string[];
   cleared: { key: string; emitAt: Date }[];
 };
-
-const iso = (d: Date) => d.toISOString();
-const toDate = (v: unknown) => (v instanceof Date ? v : new Date(v as string));
-const toIso = (v: unknown) => toDate(v).toISOString();
 
 interface IncidentRow {
   key: string; category: Incident['category']; road_name: string; direction: string;
