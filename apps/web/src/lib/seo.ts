@@ -7,6 +7,9 @@ export const INSIGHTS_DESCRIPTION = '최근 24시간 고속도로 노선별 속�
 
 const LOCALE = 'ko_KR';
 
+/** README 첫 스크린샷을 1200x630 으로 자른 파일. 페이지 openGraph 가 레이아웃 것을 대체하므로 모든 메타에 직접 넣는다. */
+export const OG_IMAGE = { url: '/og.png', width: 1200, height: 630, alt: '속도 색으로 빛나는 전국 고속도로' };
+
 /** 미리보기 배포만 색인에서 뺀다. 로컬 · 운영은 그대로 색인한다. */
 export function isPreviewDeployment(vercelEnv: string | undefined): boolean {
   return vercelEnv === 'preview';
@@ -23,8 +26,8 @@ export function buildRootMetadata({ preview, delayMinutes }: { preview: boolean;
     title: { default: SITE_NAME, template: `%s · ${SITE_NAME}` },
     description: homeDescription(delayMinutes),
     // Next 는 페이지의 openGraph 를 레이아웃 것에 합치지 않고 통째로 바꾼다. 그래서 description · url 은 페이지마다 만든다.
-    openGraph: { siteName: SITE_NAME, locale: LOCALE, type: 'website' },
-    twitter: { card: 'summary_large_image' },
+    openGraph: { siteName: SITE_NAME, locale: LOCALE, type: 'website', images: [OG_IMAGE] },
+    twitter: { card: 'summary_large_image', images: [OG_IMAGE] },
     ...(preview ? { robots: { index: false, follow: false } } : {}),
   };
 }
@@ -43,7 +46,7 @@ export function buildPageMetadata({
     ...(title ? { title } : {}),
     description,
     alternates: { canonical: path },
-    openGraph: { title: shareTitle, description, url: path, siteName: SITE_NAME, locale: LOCALE, type: 'website' },
-    twitter: { card: 'summary_large_image', title: shareTitle, description },
+    openGraph: { title: shareTitle, description, url: path, siteName: SITE_NAME, locale: LOCALE, type: 'website', images: [OG_IMAGE] },
+    twitter: { card: 'summary_large_image', title: shareTitle, description, images: [OG_IMAGE] },
   };
 }

@@ -5,6 +5,7 @@ import {
   homeDescription,
   INSIGHTS_DESCRIPTION,
   isPreviewDeployment,
+  OG_IMAGE,
   SITE_NAME,
   SITE_URL,
 } from './seo';
@@ -28,6 +29,12 @@ describe('homeDescription', () => {
     for (const text of [homeDescription(20), homeDescription(60)]) {
       expect(text.includes('1시간') && text.includes('20분')).toBe(false);
     }
+  });
+});
+
+describe('OG_IMAGE', () => {
+  test('is the 1200x630 public file with alt text', () => {
+    expect(OG_IMAGE).toEqual({ url: '/og.png', width: 1200, height: 630, alt: '속도 색으로 빛나는 전국 고속도로' });
   });
 });
 
@@ -62,6 +69,11 @@ describe('buildRootMetadata', () => {
     expect(meta.twitter).toMatchObject({ card: 'summary_large_image' });
   });
 
+  test('carries the share image so a page without its own openGraph keeps it', () => {
+    expect(meta.openGraph).toMatchObject({ images: [OG_IMAGE] });
+    expect(meta.twitter).toMatchObject({ images: [OG_IMAGE] });
+  });
+
   test('blocks indexing on previews', () => {
     expect(buildRootMetadata({ preview: true, delayMinutes: 20 }).robots).toEqual({ index: false, follow: false });
   });
@@ -81,6 +93,8 @@ describe('buildPageMetadata', () => {
       type: 'website',
     });
     expect(meta.twitter).toMatchObject({ card: 'summary_large_image', title: '분석 · 전국 도로 상황실', description: 'd' });
+    expect(meta.openGraph).toMatchObject({ images: [OG_IMAGE] });
+    expect(meta.twitter).toMatchObject({ images: [OG_IMAGE] });
     expect(meta).not.toHaveProperty('robots');
   });
 
