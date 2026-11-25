@@ -17,6 +17,10 @@ export function readTiming(env: Record<string, string | undefined>): Timing {
   };
 }
 
+export function intervalLabel(minutes: number): string {
+  return minutes === 60 ? '1시간' : `${minutes}분`;
+}
+
 export function delayLabel(minutes: number): string {
   return minutes === 60 ? '약 1시간 지연' : `약 ${minutes}분 지연`;
 }

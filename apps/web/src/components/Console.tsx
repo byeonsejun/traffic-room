@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Cctv, ClientMessage } from '@traffic-room/shared';
+import type { Cctv, ClientMessage, Timing } from '@traffic-room/shared';
 import { FALLBACK, load } from '@/lib/load';
 import { createRealtimeClient } from '@/lib/realtime-client';
 import type { Snapshot } from '@/lib/api';
@@ -29,15 +29,15 @@ const CCTV_REFRESH_MS = 60 * 60_000;
 
 type NoticeSource = 'cctvs' | 'snapshot';
 
-export function Console() {
+export function Console({ initialTiming }: { initialTiming: Pick<Timing, 'delayMinutes' | 'intervalMinutes'> }) {
   const status = useConsole((s) => s.status);
   const retryInMs = useConsole((s) => s.retryInMs);
   const top = useConsole((s) => s.feed[0]);
 
   const [cctvs, setCctvs] = useState<Cctv[]>([]);
   const [collectedAt, setCollectedAt] = useState<string | null>(null);
-  // 스냅샷이 오기 전에는 기본 지연(60분)으로 보여 준다.
-  const [delayMinutes, setDelayMinutes] = useState(60);
+  // 스냅샷이 오기 전에는 서버가 설정에서 읽어 내려준 지연으로 보여 준다.
+  const [delayMinutes, setDelayMinutes] = useState(initialTiming.delayMinutes);
   // 지표 스트림 연결 하나. 끊겨도 마지막 지표와 도로 색을 그대로 둔다. 연결 상태는 WebSocket 배지가 이미 보여 준다.
   useMetricsStream();
   const metrics = useMetrics((s) => s.metrics);
@@ -47,7 +47,7 @@ export function Console() {
   const refreshTick = useFallbackTick(!!REALTIME_URL);
   const traffic = useTraffic(metrics?.trafficSnapshotId ?? null, refreshTick);
   // 왼쪽 평균 속도 추이. 교통 스냅샷이 바뀌면 24시간 요약도 다시 받는다.
-  const insights = useInsights(metrics?.trafficSnapshotId ?? null, refreshTick);
+  const insights = useInsights(metrics?.trafficSnapshotId ?? null, refreshTick, initialTiming);
   const [notices, setNotices] = useState<Partial<Record<NoticeSource, string>>>({});
   const client = useRef<ReturnType<typeof createRealtimeClient> | null>(null);
   const send = useCallback((m: ClientMessage) => client.current?.send(m), []);

@@ -1,6 +1,6 @@
 'use client';
 
-import { delayLabel } from '@traffic-room/shared';
+import { delayLabel, intervalLabel, type Timing } from '@traffic-room/shared';
 import { HISTORY_HOURS, historyHours } from '@/lib/insights';
 import { hhmm } from '@/lib/time';
 import { useMetrics } from '@/store/metrics';
@@ -18,11 +18,11 @@ import { SlowRoutes } from './SlowRoutes';
  * 분석 화면. 24시간 기록은 /api/insights 로 받고, SSE 지표가 가리키는 교통 스냅샷이 바뀌면 다시 받는다.
  * 지금 값 타일은 SSE 지표를 바로 따른다.
  */
-export function Insights() {
+export function Insights({ initialTiming }: { initialTiming: Pick<Timing, 'delayMinutes' | 'intervalMinutes'> }) {
   const stream = useMetricsStream();
   const metrics = useMetrics((s) => s.metrics);
   const refreshTick = useFallbackTick(stream !== 'off');
-  const insights = useInsights(metrics?.trafficSnapshotId ?? null, refreshTick);
+  const insights = useInsights(metrics?.trafficSnapshotId ?? null, refreshTick, initialTiming);
   const { buckets, routes, incidentsByHour, intervalMinutes, loadedAt } = insights.data;
   // SSE 지표가 오기 전에는 /api/insights 가 준 설정값을 쓴다.
   const delayMinutes = metrics?.delayMinutes ?? insights.data.delayMinutes;
@@ -40,7 +40,7 @@ export function Insights() {
           <h2>최근 24시간 고속도로</h2>
           <p>
             {dataAt ? <>교통 {hhmm(dataAt)} 기준 · </> : null}
-            {intervalMinutes === 60 ? '1시간' : `${intervalMinutes}분`}마다 수집 · {delayLabel(delayMinutes)}
+            {intervalLabel(intervalMinutes)}마다 수집 · {delayLabel(delayMinutes)}
           </p>
         </header>
         <HistoryBand insights={insights} />

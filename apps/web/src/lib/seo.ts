@@ -1,5 +1,5 @@
 import type { Metadata, MetadataRoute } from 'next';
-import { delayLabel } from '@traffic-room/shared';
+import { delayLabel, intervalLabel } from '@traffic-room/shared';
 
 export const SITE_URL = 'https://traffic-room.vercel.app';
 export const SITE_NAME = '전국 도로 상황실';
@@ -69,7 +69,7 @@ export function buildSitemap(): MetadataRoute.Sitemap {
 }
 
 export function buildLlmsTxt({ delayMinutes, intervalMinutes }: { delayMinutes: number; intervalMinutes: number }): string {
-  const interval = intervalMinutes === 60 ? '1시간' : `${intervalMinutes}분`;
+  const interval = intervalLabel(intervalMinutes);
   return `# ${SITE_NAME}
 
 > 국가교통정보센터(ITS) 공개 데이터로 전국 고속도로 속도와 돌발 상황, CCTV를 보여 주는 관제 화면입니다. API 호출 한도 때문에 ${interval}마다 수집하고, 새 상황은 ${delayLabel(delayMinutes)}으로 일어난 순서대로 다시 내보냅니다.

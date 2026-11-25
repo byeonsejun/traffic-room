@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { delayLabel } from './timing.ts';
+import { delayLabel, intervalLabel } from './timing.ts';
 import { metricsSchema, speedLevel } from './traffic.ts';
 
 describe('speedLevel', () => {
@@ -15,6 +15,13 @@ describe('delayLabel', () => {
   it('60분은 1시간, 그 밖은 분 단위', () => {
     expect(delayLabel(60)).toBe('약 1시간 지연');
     expect(delayLabel(20)).toBe('약 20분 지연');
+  });
+});
+
+describe('intervalLabel', () => {
+  it('60분은 1시간, 그 밖은 분 단위', () => {
+    expect(intervalLabel(60)).toBe('1시간');
+    expect(intervalLabel(15)).toBe('15분');
   });
 });
 
