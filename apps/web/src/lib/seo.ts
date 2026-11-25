@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, MetadataRoute } from 'next';
 import { delayLabel } from '@traffic-room/shared';
 
 export const SITE_URL = 'https://traffic-room.vercel.app';
@@ -48,5 +48,63 @@ export function buildPageMetadata({
     alternates: { canonical: path },
     openGraph: { title: shareTitle, description, url: path, siteName: SITE_NAME, locale: LOCALE, type: 'website', images: [OG_IMAGE] },
     twitter: { card: 'summary_large_image', title: shareTitle, description, images: [OG_IMAGE] },
+  };
+}
+
+const AUTHOR_SITE = 'https://sejunb.com';
+const REPO_URL = 'https://github.com/byeonsejun/traffic-room';
+
+/** 막는 곳은 /api/ 뿐이다(데이터 응답이라 색인할 화면이 아니다). 미리보기는 통째로 막고 사이트맵도 알리지 않는다. */
+export function buildRobots(preview: boolean): MetadataRoute.Robots {
+  if (preview) return { rules: [{ userAgent: '*', disallow: '/' }] };
+  return {
+    rules: [{ userAgent: '*', allow: '/', disallow: ['/api/'] }],
+    sitemap: `${SITE_URL}/sitemap.xml`,
+  };
+}
+
+/** 데이터는 15분마다 바뀌어도 페이지 자체는 그대로라 lastModified 를 넣지 않는다. */
+export function buildSitemap(): MetadataRoute.Sitemap {
+  return [{ url: `${SITE_URL}/` }, { url: `${SITE_URL}/insights` }];
+}
+
+export function buildLlmsTxt({ delayMinutes, intervalMinutes }: { delayMinutes: number; intervalMinutes: number }): string {
+  const interval = intervalMinutes === 60 ? '1시간' : `${intervalMinutes}분`;
+  return `# ${SITE_NAME}
+
+> 국가교통정보센터(ITS) 공개 데이터로 전국 고속도로 속도와 돌발 상황, CCTV를 보여 주는 관제 화면입니다. API 호출 한도 때문에 ${interval}마다 수집하고, 새 상황은 ${delayLabel(delayMinutes)}으로 일어난 순서대로 다시 내보냅니다.
+
+## 페이지
+
+- [관제 화면](${SITE_URL}/): 진행 중인 돌발상황, 고속도로 평균 속도, 가까운 CCTV
+- [분석](${SITE_URL}/insights): 최근 24시간 노선별 속도, 구간 상태, 시간대별 돌발 발생
+
+## 만든 사람
+
+- 변세준 · ${AUTHOR_SITE}
+- 저장소: ${REPO_URL}
+
+## 기술
+
+Next.js 16, MapLibre GL, hls.js, ECharts, WebSocket · SSE 실시간 서버(Fastify), Neon Postgres
+
+## 데이터
+
+- 교통 정보 · CCTV: 국가교통정보센터(ITS) 공개 API
+- 지도: OpenFreeMap · OpenStreetMap 기여자
+`;
+}
+
+/** 화면에 보이는 값만 쓴다. 화면에 "무료"나 출처 이름이 없어서 offers · 출처는 넣지 않는다. */
+export function buildWebApplicationJsonLd(delayMinutes: number): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: SITE_NAME,
+    url: `${SITE_URL}/`,
+    description: homeDescription(delayMinutes),
+    inLanguage: 'ko-KR',
+    applicationCategory: 'TravelApplication',
+    operatingSystem: 'Web',
   };
 }
