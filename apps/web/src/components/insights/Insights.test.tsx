@@ -65,8 +65,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const mount = async () => {
-  const view = render(<Insights />);
+const mount = async (initialTiming = { delayMinutes: 60, intervalMinutes: 60 }) => {
+  const view = render(<Insights initialTiming={initialTiming} />);
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
   return view;
 };
@@ -138,6 +138,13 @@ test('before SSE arrives the delay label comes from /api/insights', async () => 
   await mount();
   expect(document.querySelector('.top .delay')?.textContent).toBe('약 20분 지연');
   expect(document.querySelector('.ins-head p')?.textContent).toContain('약 20분 지연');
+});
+
+test('while the first load is pending the header uses the timing the server rendered with', () => {
+  respond = () => new Promise<Response>(() => {}) as unknown as Response;
+  render(<Insights initialTiming={{ delayMinutes: 20, intervalMinutes: 15 }} />);
+  expect(document.querySelector('.top .delay')?.textContent).toBe('약 20분 지연');
+  expect(document.querySelector('.ins-head p')?.textContent).toBe('15분마다 수집 · 약 20분 지연');
 });
 
 test('a failed first load retries with backoff (30 s, then 60 s) until it succeeds', async () => {

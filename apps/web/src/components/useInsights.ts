@@ -22,9 +22,14 @@ const RETRY_MAX_MS = 300_000;
  * 24시간 교통 요약. 처음 한 번 받고, 지표가 가리키는 교통 스냅샷이 바뀌거나 대비용 박자(refreshTick)가 오면 다시 받는다.
  * 다시 받기가 실패하면 마지막으로 받은 기록을 그대로 둔다. 한 번도 못 받았으면 30초 · 60초 … 5분 간격으로 다시 시도한다.
  * 받기 전 · 실패를 "기록 0시간"으로 읽지 않게 상태를 함께 준다.
+ * initial 은 서버가 설정에서 읽어 내려준 지연 · 수집 간격으로, 첫 응답이 오기 전 화면 글에 쓴다.
  */
-export function useInsights(snapshotId: number | null, refreshTick = 0): InsightsState {
-  const [state, setState] = useState<InsightsState>({ status: 'loading', data: EMPTY });
+export function useInsights(
+  snapshotId: number | null,
+  refreshTick = 0,
+  initial?: { delayMinutes: number; intervalMinutes: number },
+): InsightsState {
+  const [state, setState] = useState<InsightsState>({ status: 'loading', data: { ...EMPTY, ...initial } });
   const loaded = useRef(false);
   useEffect(() => {
     const ac = new AbortController();

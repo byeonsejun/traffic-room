@@ -72,8 +72,9 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
   return next();
 });
 
+const INITIAL_TIMING = { delayMinutes: 60, intervalMinutes: 60 };
 async function mount() {
-  const view = render(<Console />);
+  const view = render(<Console initialTiming={INITIAL_TIMING} />);
   await flush();
   return view;
 }
@@ -269,7 +270,7 @@ test('metrics arriving while the first fetch is in flight do not double it', asy
       c.close();
     },
   }), { status: 200 });
-  render(<Console />);
+  render(<Console initialTiming={INITIAL_TIMING} />);
   act(() => streams[0]!.opts.onMetrics(metrics(4)));
   release();
   await flush();
@@ -437,6 +438,12 @@ test('the delay label follows the delay in SSE metrics over the snapshot value',
   expect(document.querySelector('.delay')?.textContent).toBe(delayLabel(60));
   await push({ ...metrics(1), delayMinutes: 30 });
   expect(document.querySelector('.delay')?.textContent).toBe(delayLabel(30));
+});
+
+test('before any snapshot arrives the delay label uses the timing the server rendered with', async () => {
+  snapshots.push(() => ok(snap(1)));
+  render(<Console initialTiming={{ delayMinutes: 20, intervalMinutes: 15 }} />);
+  expect(document.querySelector('.top .delay')?.textContent).toBe('약 20분 지연');
 });
 
 test('the CCTV list is refetched every 60 minutes, and a failure keeps the old list', async () => {

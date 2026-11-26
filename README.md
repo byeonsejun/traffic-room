@@ -181,12 +181,22 @@ pnpm --filter @traffic-room/web dev
 
 - DB 없이 실행하면 화면은 저장해 둔 실제 ITS 응답(2026-11-11)으로 뜹니다. 이 대체 동작은 운영 환경에서는 꺼져 있습니다.
 - 실시간 서버(`apps/realtime`)와 수집기(`apps/collector`)는 Postgres가 필요합니다. `.env`에 `DATABASE_URL`을 넣고 `pnpm db:migrate`로 테이블을 만듭니다. 운영 구성은 [`docs/deploy.md`](docs/deploy.md)에 있습니다.
-- 검사는 `pnpm test`(Vitest 478개), `pnpm typecheck`, `pnpm lint`입니다.
+- 검사는 `pnpm test`(Vitest 503개), `pnpm typecheck`, `pnpm lint`입니다.
 - 고속도로 모양 파일은 표준노드링크를 새로 받았을 때만 `pnpm highways:build <MOCT_LINK 폴더>`로 다시 만듭니다.
 
 **구성** pnpm 모노레포. `packages/shared`(메시지 형식, 설정값, zod 검증) · `packages/its`(ITS 클라이언트와 응답 정리) · `packages/db`(Neon 저장소, 덮어쓰기와 정리) · `packages/highways`(표준노드링크 → 고속도로 모양 파일) · `apps/collector`(수집, 비교, 검증) · `apps/realtime`(Fastify + WebSocket 지연 재생, SSE 지표) · `apps/web`(관제 화면과 분석 페이지)
 
 **스택** Next.js 16 · React 19 · TypeScript 7 · MapLibre GL 6 · OpenFreeMap · ECharts 6 · hls.js · zustand · Fastify · @fastify/websocket · zod · Neon Postgres · Vitest 5 · oxlint · Vercel · Render
+
+## 검색 노출
+
+운영 화면의 Lighthouse 검색 점수(13.4.1, 모바일)는 2026-11-25에 재 보니 `/`와 `/insights` 모두 이미 100이었습니다. 그래서 점수를 올린 작업이 아닙니다. 점수가 보지 않는 곳을 채웠습니다. 검색 결과에 뜨는 설명이 "약 1시간 지연"이라고 틀리게 적혀 있었고, `robots.txt`와 사이트맵은 404였고, 링크를 붙여 넣었을 때 보일 공유 카드와 구조화 데이터가 없었습니다.
+
+설명이 틀렸던 원인은 단순했습니다. 화면의 지연 표시는 설정(`DELAY_MINUTES`)을 읽는데, 메타 설명은 글자 그대로 적혀 있었습니다. 지연을 1시간에서 20분으로 줄인 뒤에도 설명만 그대로 남았습니다. 이제 설명은 화면과 같은 함수(`readTiming`, `delayLabel`)로 만듭니다. 처음 내려가는 화면 본문도 같은 값으로 그립니다. 두 곳 모두 빌드할 때 정해지는 값이라 `DELAY_MINUTES`를 바꾸면 다시 배포해야 반영됩니다. 공유 이미지는 페이지 메타에 직접 넣었습니다. Next.js는 페이지의 `openGraph`를 레이아웃 것에 합치지 않고 통째로 바꿔 버립니다. 파일 규칙으로 둔 이미지가 `/insights`에서 사라지는 것을 빌드해서 확인하고 나서야 알았습니다.
+
+`robots.txt`는 `/api/`만 막습니다. 그 아래는 데이터 응답이라 검색에 보일 이유가 없고, 나머지 두 화면은 열어 둡니다. 미리보기 배포는 전체를 막고 `noindex`를 붙여서 운영 주소와 겹치지 않게 했습니다. 구조화 데이터(`WebApplication`)에는 "무료"도 출처 이름도 넣지 않았습니다. 화면에 둘 다 보이지 않기 때문입니다. 출처는 `llms.txt`와 이 README에 있습니다.
+
+2026-11-25에 확인한 것은 이렇습니다. `DELAY_MINUTES=20`, `COLLECT_INTERVAL_MINUTES=15`로 빌드해서 띄운 로컬에서 `robots.txt` · `sitemap.xml` · `llms.txt` · `og.png`가 모두 200이었고, `llms.txt`에 "15분마다"와 "약 20분 지연"이 나왔습니다. 빌드한 HTML 본문에는 "1시간"이 없고, 분석 페이지 머리말은 "15분마다 수집 · 약 20분 지연"으로 내려갑니다. 두 페이지의 `og:image`는 `https://traffic-room.vercel.app/og.png`입니다. schema.org 검증기에서 홈은 오류 0, 경고 0이었습니다. 같은 로컬을 Lighthouse 13.4.1 모바일로 `/`와 `/insights`를 두 번씩 돌린 검색 점수는 네 번 모두 100이고 실패한 감사가 없었습니다. 미리보기 배포는 `robots.txt`가 `Disallow: /`이고 홈 HTML에 `noindex, nofollow`가 들어 있습니다. 구글 리치 결과 테스트는 돌리지 않았습니다.
 
 ## 아직 남은 것
 
